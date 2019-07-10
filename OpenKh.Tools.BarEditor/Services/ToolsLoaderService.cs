@@ -3,6 +3,7 @@ using OpenKh.Tools.Common;
 using System;
 using System.IO;
 using System.Linq;
+using System.Windows;
 using Xe.Tools;
 
 namespace OpenKh.Tools.BarEditor.Services
@@ -25,12 +26,18 @@ namespace OpenKh.Tools.BarEditor.Services
 					name = "OpenKh.Tools.ImgzViewer";
 					break;
 				default:
-					throw new NotImplementedException($"Unable to find a tool for \"{type}\" files.");
+					throw new NotImplementedException($"Unable to find a tool for \"{entry.Type}\" files.");
 			}
 
 			var toolModule = Plugins
 				.GetModules<IToolModule<ToolInvokeDesc>>(null, x => x.Contains(name) && Path.GetExtension(x) == ".exe")
 				.FirstOrDefault();
+
+            if (toolModule.Item1 == null || toolModule.Item2 == null)
+            {
+                MessageBox.Show($"Unable to find a tool module for the tool {name}.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return null;
+            }
 
 			var tool = Activator.CreateInstance(toolModule.Item2) as IToolModule<ToolInvokeDesc>;
 

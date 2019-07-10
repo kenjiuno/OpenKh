@@ -1,13 +1,14 @@
-﻿using OpenKh.Tools.ImgzViewer.Views;
+﻿using OpenKh.Tools.Common;
+using OpenKh.Tools.ImgzViewer.Views;
 using Xe.Tools;
 
 namespace OpenKh.Tools.ImgdViewer
 {
-	public class ImgzModule : IToolModule
-	{
-		public bool? ShowDialog(params object[] args)
+	public class ImgzModule : IToolModule<ToolInvokeDesc>
+    {
+		public bool? ShowDialog(ToolInvokeDesc desc)
 		{
-			return new ImgzView(args).ShowDialog();
+			return new ImgzView(desc).ShowDialog();
 		}
 	}
 }

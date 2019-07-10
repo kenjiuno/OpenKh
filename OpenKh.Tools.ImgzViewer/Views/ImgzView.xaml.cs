@@ -1,4 +1,5 @@
 ﻿using OpenKh.Kh2;
+using OpenKh.Tools.Common;
 using OpenKh.Tools.ImgzViewer.ViewModels;
 using System;
 using System.Collections.Generic;
@@ -42,9 +43,15 @@ namespace OpenKh.Tools.ImgzViewer.Views
 			this()
 		{
 			Initialize(stream);
-		}
+        }
 
-		private void Initialize(Stream stream)
+        public ImgzView(ToolInvokeDesc desc) :
+            this()
+        {
+            Initialize(desc.SelectedEntry.Stream);
+        }
+
+        private void Initialize(Stream stream)
 		{
 			DataContext = new ImagesViewModel(stream);
 		}

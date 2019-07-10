@@ -1,4 +1,5 @@
 ﻿using OpenKh.Kh2;
+using OpenKh.Tools.Common;
 using OpenKh.Tools.ImgdViewer.ViewModels;
 using System.IO;
 using System.Windows;
@@ -32,15 +33,21 @@ namespace OpenKh.Tools.ImgdViewer.Views
 			this()
 		{
 			Initialize(imgd);
-		}
+        }
 
-		public ImgdView(Stream stream) :
-			this()
-		{
-			Initialize(stream);
-		}
+        public ImgdView(Stream stream) :
+            this()
+        {
+            Initialize(stream);
+        }
 
-		private void Initialize(Stream stream)
+        public ImgdView(ToolInvokeDesc desc) :
+            this()
+        {
+            Initialize(desc.SelectedEntry.Stream);
+        }
+
+        private void Initialize(Stream stream)
 		{
 			DataContext = new ImageViewModel(stream);
 		}

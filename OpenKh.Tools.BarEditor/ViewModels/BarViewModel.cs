@@ -109,9 +109,10 @@ namespace OpenKh.Tools.BarEditor.ViewModels
 			ExportCommand = new RelayCommand(x =>
 			{
 				var fd = FileDialog.Factory(Window, FileDialog.Behavior.Save);
-                fd.DefaultFileName = $"{SelectedItem.Entry.Name}.bin";
+                fd.DefaultFileName = GetSuggestedFileName(SelectedItem.Entry);
 
-				if (fd.ShowDialog() == true)
+
+                if (fd.ShowDialog() == true)
 				{
 					using (var fStream = File.OpenWrite(fd.FileName))
 					{
@@ -130,7 +131,7 @@ namespace OpenKh.Tools.BarEditor.ViewModels
                     var basePath = fd.FileName;
                     foreach (var item in Items.Select(item => item.Entry))
                     {
-                        var fileName = $"{item.Name}.bin";
+                        string fileName = GetSuggestedFileName(item);
                         using (var fStream = File.OpenWrite(Path.Combine(basePath, fileName)))
                         {
                             item.Stream.Position = 0;
@@ -158,7 +159,10 @@ namespace OpenKh.Tools.BarEditor.ViewModels
 			SearchCommand = new RelayCommand(x => { }, x => false);
 		}
 
-		private Window Window => Application.Current.Windows.OfType<Window>().FirstOrDefault(x => x.IsActive);
+        private static string GetSuggestedFileName(Bar.Entry item) =>
+            $"{item.Name}_{item.Index}.{Helpers.GetSuggestedExtension(item.Type)}";
+
+        private Window Window => Application.Current.Windows.OfType<Window>().FirstOrDefault(x => x.IsActive);
 
 		private string FileName { get; set; }
 

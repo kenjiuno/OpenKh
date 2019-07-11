@@ -22,10 +22,13 @@ namespace OpenKh.Tools.BarEditor.Services
 				case Bar.EntryType.Imgd:
 					name = "OpenKh.Tools.ImgdViewer";
 					break;
-				case Bar.EntryType.Imgz:
-					name = "OpenKh.Tools.ImgzViewer";
-					break;
-				default:
+                case Bar.EntryType.Imgz:
+                    name = "OpenKh.Tools.ImgzViewer";
+                    break;
+                case Bar.EntryType.Layout:
+                    name = "OpenKh.Tools.LayoutViewer";
+                    break;
+                default:
 					throw new NotImplementedException($"Unable to find a tool for \"{entry.Type}\" files.");
 			}
 

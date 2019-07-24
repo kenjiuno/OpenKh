@@ -8,7 +8,8 @@ namespace OpenKh.Tests.kh2
 {
     public class BarTests : Common
     {
-        private const string FilePath = "kh2/res/bar_test.bar";
+        private const string FilePath =
+            @"D:\Hacking\KH2\export\obj\G_OA300.mdlx";
 
         [Fact]
         public void IsValidTest()
@@ -131,10 +132,37 @@ namespace OpenKh.Tests.kh2
                     var actualData = new byte[dstStream.Length];
                     dstStream.Read(actualData, 0, actualData.Length);
 
+                    dstStream.Dump("D:/03system_openkh.bin");
+
                     Assert.Equal(expectedData.Length, actualData.Length);
                     Assert.Equal(expectedData, actualData);
                 }
             });
+
+        [Fact]
+        public void ShouldAlignContentOnWrite()
+        {
+            var dstStream = new MemoryStream();
+            Bar.Write(dstStream, new Bar.Entry[]
+            {
+                new Bar.Entry
+                {
+                    Name = "Test",
+                    Stream = new MemoryStream(new byte[] { 0xcc, 0xcc, 0xcc, 0xcc, 0xcc })
+                },
+                new Bar.Entry
+                {
+                    Name = "Algn",
+                    Stream = new MemoryStream(new byte[] { 0xde, 0xad, 0xbe, 0xef })
+                }
+            });
+
+            var content = dstStream.ToArray();
+            Assert.Equal(0x30, content[0x18]);
+            Assert.Equal(5, content[0x1c]);
+            Assert.Equal(0x40, content[0x28]);
+            Assert.Equal(4, content[0x2c]);
+        }
 
         [Theory]
         [InlineData("TEST", "TEST")]

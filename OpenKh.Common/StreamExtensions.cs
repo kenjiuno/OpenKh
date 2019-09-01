@@ -105,6 +105,21 @@ namespace OpenKh.Common
             return (int)stream.Position - oldPosition;
         }
 
+        public static int Write(this Stream stream, int value) =>
+            stream.Write((uint)value);
+
+        public static int Write(this Stream stream, uint value)
+        {
+            var oldPosition = stream.Position;
+
+            stream.WriteByte((byte)((value >> 0) & 0xFF));
+            stream.WriteByte((byte)((value >> 8) & 0xFF));
+            stream.WriteByte((byte)((value >> 16) & 0xFF));
+            stream.WriteByte((byte)((value >> 24) & 0xFF));
+
+            return (int)(stream.Position - oldPosition);
+        }
+
         public static void Copy(this Stream source, Stream destination, int length, int bufferSize = 65536)
         {
             int read;

@@ -1,6 +1,8 @@
 ﻿using OpenKh.Bbs;
+using OpenKh.Common;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Xunit;
 
 namespace OpenKh.Tests.Bbs
@@ -85,5 +87,29 @@ namespace OpenKh.Tests.Bbs
             Assert.Empty(ctd.Entries2);
             Assert.Equal(0, ctd.Unknown);
         }
+
+        [Fact]
+        public void WriteEverythingBack()
+        {
+            string Path = @"D:\Hacking\KHBBS";
+            Directory.GetFiles(Path, "*.ctd", SearchOption.AllDirectories)
+                .Where(x => File.OpenRead(x).Using(stream => Ctd.IsValid(stream)))
+                .AsParallel()
+                .ForAll(fileName => File.OpenRead(fileName).Using(stream =>
+                {
+                    Helpers.AssertStream(stream, inStream =>
+                    {
+                        var ctd = Ctd.Read(stream);
+
+                        var outStream = new MemoryStream((int)inStream.Length);
+                        ctd.Write(outStream);
+                        outStream.AlignPosition(0x800);
+                        outStream.SetLength((int)outStream.Position);
+                        return outStream;
+                    });
+                }));
+        }
+
+
     }
 }

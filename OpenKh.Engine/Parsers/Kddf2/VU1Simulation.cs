@@ -126,6 +126,8 @@ namespace OpenKh.Engine.Parsers.Kddf2
                 );
             }
 
+            mesh.cntVertexMixer = cntVertexMixer;
+
             if (cntVertexMixer != 0)
             {
                 si.Position = 16 * (tops + offVertexMixer);
@@ -134,13 +136,23 @@ namespace OpenKh.Engine.Parsers.Kddf2
                 int cntVerticesMix3ToOne = br.ReadInt32();
                 int cntVerticesMix4ToOne = br.ReadInt32();
                 int cntVerticesMix5ToOne = 0;
+                int cntVerticesMix6ToOne = 0;
+                int cntVerticesMix7ToOne = 0;
                 if (cntVertexMixer >= 5)
                 {
                     cntVerticesMix5ToOne = br.ReadInt32();
-                    br.ReadInt32();
-                    br.ReadInt32();
+                    cntVerticesMix6ToOne = br.ReadInt32();
+                    cntVerticesMix7ToOne = br.ReadInt32();
                     br.ReadInt32();
                 }
+
+                mesh.cntSkip = cntSkip;
+                mesh.cntVerticesMix2ToOne = cntVerticesMix2ToOne;
+                mesh.cntVerticesMix3ToOne = cntVerticesMix3ToOne;
+                mesh.cntVerticesMix4ToOne = cntVerticesMix4ToOne;
+                mesh.cntVerticesMix5ToOne = cntVerticesMix5ToOne;
+                mesh.cntVerticesMix6ToOne = cntVerticesMix6ToOne;
+                mesh.cntVerticesMix7ToOne = cntVerticesMix7ToOne;
 
                 VertexAssignment[][] newVertexAssignList = new VertexAssignment[vpu.VertexCount][];
                 int inputVertexIndex = 0;
@@ -205,7 +217,7 @@ namespace OpenKh.Engine.Parsers.Kddf2
                         newVertexAssignList[inputVertexIndex] = (new VertexAssignment[] { vertexAssignmentList[vertex1], vertexAssignmentList[vertex2], vertexAssignmentList[vertex3], vertexAssignmentList[vertex4], vertexAssignmentList[vertex5] });
                     }
                 }
-                if (cntVertexMixer >= 6)
+                if (cntVertexMixer >= 8)
                 {
                     throw new NotSupportedException("cntVertexMixer is too high: " + cntVertexMixer);
                 }

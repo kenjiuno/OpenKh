@@ -18,7 +18,7 @@ namespace OpenKh.Engine.Parsers.Kddf2
 
         public List<CI> MeshDescriptors { get; } = new List<CI>();
 
-        private readonly List<ImmutableMesh> immultableMeshList;
+        public readonly List<ImmutableMesh> immultableMeshList;
 
         /// <summary>
         /// Build immutable parts from a submodel.

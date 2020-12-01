@@ -1,8 +1,11 @@
-<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
   
   <PropertyGroup>
     <TargetFramework>netcoreapp3.1</TargetFramework>
     <UseWPF>true</UseWPF>
+
+    <OpenKhAuthor>All OpenKh developers</OpenKhAuthor>
+    <OpenKhPoweredBy>All OpenKh contributors</OpenKhPoweredBy>
   </PropertyGroup>
   
   <ItemGroup>
@@ -16,5 +19,7 @@
     <ProjectReference Include="..\XeEngine.Tools.Public\Xe.Tools.Wpf\Xe.Tools.Wpf.csproj" />
     <ProjectReference Include="..\OpenKh.Kh2\OpenKh.Kh2.csproj" />
   </ItemGroup>
+
+  <Import Project="OpenKh.VersioningHelper.targets" />
 
 </Project>

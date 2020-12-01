@@ -1,0 +1,26 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="SolutionInfoGenerator" BeforeTargets="CoreCompile" DependsOnTargets="PrepareForBuild">
+    <Exec Command="git describe --tags"
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true"
+          >
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitDescribeOutput" />
+    </Exec>
+    
+    <ItemGroup>
+      <AssemblyAttributes Include="OpenKh.Tools.Common.Attributes.AuthorAttribute">
+        <_Parameter1>$(OpenKhAuthor)</_Parameter1>
+      </AssemblyAttributes>
+      <AssemblyAttributes Include="OpenKh.Tools.Common.Attributes.PoweredByAttribute">
+        <_Parameter1>$(OpenKhPoweredBy)</_Parameter1>
+      </AssemblyAttributes>
+      <AssemblyAttributes Include="OpenKh.Tools.Common.Attributes.BuildVersionAttribute">
+        <_Parameter1>$(GitDescribeOutput)</_Parameter1>
+      </AssemblyAttributes>
+    </ItemGroup>
+    <WriteCodeFragment AssemblyAttributes="@(AssemblyAttributes)" Language="C#" OutputDirectory="$(IntermediateOutputPath)" OutputFile="SolutionInfo.cs">
+      <Output TaskParameter="OutputFile" ItemName="Compile" />
+      <Output TaskParameter="OutputFile" ItemName="FileWrites" />
+    </WriteCodeFragment>
+  </Target>
+</Project>

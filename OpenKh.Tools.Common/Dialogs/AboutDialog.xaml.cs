@@ -1,4 +1,5 @@
-﻿using System;
+﻿using OpenKh.Tools.Common.Attributes;
+using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Reflection;
@@ -31,9 +32,9 @@ namespace OpenKh.Tools.Common.Dialogs
 
 			name = fvi.ProductName;
 			website = fvi.Comments;
-			version = $"compiled date time or git hash and branch?";
-			author = "OpenKh blabla";
-			powered = "blablablabla";
+			version = GetType().Assembly.GetCustomAttribute<BuildVersionAttribute>().BuildVersion;
+			author = GetType().Assembly.GetCustomAttribute<AuthorAttribute>().Author;
+			powered = GetType().Assembly.GetCustomAttribute<PoweredByAttribute>().PoweredBy;
 			authorwebsite = "https://openkh.dev";
 
 			DataContext = this;

@@ -52,7 +52,7 @@ namespace OpenKh.Engine.Motion
         public Kh2.Motion CurrentMotion => _motion;
 
         public void ApplyMotion(IModelMotion model, float time)
-        {   
+        {
             if (CurrentMotion.IsRaw)
                 ApplyRawMotion(model, CurrentMotion.Raw, time);
             else
@@ -70,27 +70,6 @@ namespace OpenKh.Engine.Motion
         {
             // The original game engine seems to always rotate the model by 90 degrees, for some reason
             const float BaseRotation = (float)(Math.PI / 180 * 90);
-
-            var motionTranslationList = new Vector3[model.Bones.Count];
-            var motionRotationList = new Quaternion[model.Bones.Count];
-            for (var i = 0; i < motionRotationList.Length; i++)
-                motionRotationList[i] = Quaternion.Identity;
-
-            foreach (var entry in motion.StaticPose)
-            {
-                switch (entry.Channel)
-                {
-                    case 3:
-                        motionRotationList[entry.BoneIndex] *= Quaternion.CreateFromAxisAngle(Vector3.UnitY, BaseRotation + entry.Value);
-                        break;
-                    case 4:
-                        motionRotationList[entry.BoneIndex] *= Quaternion.CreateFromAxisAngle(Vector3.UnitZ, BaseRotation + entry.Value);
-                        break;
-                    case 5:
-                        motionRotationList[entry.BoneIndex] *= Quaternion.CreateFromAxisAngle(Vector3.UnitX, BaseRotation + entry.Value);
-                        break;
-                }
-            }
 
             var boneList = model.Bones.ToArray();
             var matrices = new Matrix4x4[boneList.Length];
@@ -110,20 +89,56 @@ namespace OpenKh.Engine.Motion
                 }
                 else
                 {
-                    absRotation = motionRotationList[parent] * absRotationList[parent] * motionRotationList[x];
+                    absRotation = absRotationList[parent];
                     absTranslation = absTranslationList[parent];
                 }
 
-                var localTranslation = Vector3.Transform(new Vector3(oneBone.TranslationX, oneBone.TranslationY, oneBone.TranslationZ), Matrix4x4.CreateFromQuaternion(absRotation));
+                var TranslationX = oneBone.TranslationX;
+                var TranslationY = oneBone.TranslationY;
+                var TranslationZ = oneBone.TranslationZ;
+
+                var RotationX = oneBone.RotationX;
+                var RotationY = oneBone.RotationY;
+                var RotationZ = oneBone.RotationZ;
+
+                motion.StaticPose.Where(it => it.BoneIndex == x).ToList().ForEach(
+                    pose =>
+                    {
+                        switch (pose.Channel)
+                        {
+                            case 3:
+                                RotationX = pose.Value;
+                                break;
+                            case 4:
+                                RotationY = pose.Value;
+                                break;
+                            case 5:
+                                RotationZ = pose.Value;
+                                break;
+
+                            case 6:
+                                TranslationX = pose.Value;
+                                break;
+                            case 7:
+                                TranslationY = pose.Value;
+                                break;
+                            case 8:
+                                TranslationZ = pose.Value;
+                                break;
+                        }
+                    }
+                );
+
+                var localTranslation = Vector3.Transform(new Vector3(TranslationX, TranslationY, TranslationZ), Matrix4x4.CreateFromQuaternion(absRotation));
                 absTranslationList[x] = absTranslation + localTranslation;
 
                 var localRotation = Quaternion.Identity;
-                if (oneBone.RotationZ != 0)
-                    localRotation *= (Quaternion.CreateFromAxisAngle(Vector3.UnitZ, oneBone.RotationZ));
-                if (oneBone.RotationY != 0)
-                    localRotation *= (Quaternion.CreateFromAxisAngle(Vector3.UnitY, oneBone.RotationY));
-                if (oneBone.RotationX != 0)
-                    localRotation *= (Quaternion.CreateFromAxisAngle(Vector3.UnitX, oneBone.RotationX));
+                if (RotationZ != 0)
+                    localRotation *= (Quaternion.CreateFromAxisAngle(Vector3.UnitZ, RotationZ));
+                if (RotationY != 0)
+                    localRotation *= (Quaternion.CreateFromAxisAngle(Vector3.UnitY, RotationY));
+                if (RotationX != 0)
+                    localRotation *= (Quaternion.CreateFromAxisAngle(Vector3.UnitX, RotationX));
                 absRotationList[x] = absRotation * localRotation;
             }
             for (int x = 0; x < matrices.Length; x++)

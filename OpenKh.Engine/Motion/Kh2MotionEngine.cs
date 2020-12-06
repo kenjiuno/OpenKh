@@ -68,7 +68,73 @@ namespace OpenKh.Engine.Motion
 
         public static void ApplyInterpolatedMotion(IModelMotion model, Kh2.Motion.InterpolatedMotion motion, float time)
         {
-            model.ApplyMotion(model.InitialPose);
+            // The original game engine seems to always rotate the model by 90 degrees, for some reason
+            const float BaseRotation = (float)(Math.PI / 180 * 90);
+
+            var motionTranslationList = new Vector3[model.Bones.Count];
+            var motionRotationList = new Quaternion[model.Bones.Count];
+            for (var i = 0; i < motionRotationList.Length; i++)
+                motionRotationList[i] = Quaternion.Identity;
+
+            foreach (var entry in motion.StaticPose)
+            {
+                switch (entry.Channel)
+                {
+                    case 3:
+                        motionRotationList[entry.BoneIndex] *= Quaternion.CreateFromAxisAngle(Vector3.UnitY, BaseRotation + entry.Value);
+                        break;
+                    case 4:
+                        motionRotationList[entry.BoneIndex] *= Quaternion.CreateFromAxisAngle(Vector3.UnitZ, BaseRotation + entry.Value);
+                        break;
+                    case 5:
+                        motionRotationList[entry.BoneIndex] *= Quaternion.CreateFromAxisAngle(Vector3.UnitX, BaseRotation + entry.Value);
+                        break;
+                }
+            }
+
+            var boneList = model.Bones.ToArray();
+            var matrices = new Matrix4x4[boneList.Length];
+            var absTranslationList = new Vector3[matrices.Length];
+            var absRotationList = new Quaternion[matrices.Length];
+
+            for (int x = 0; x < matrices.Length; x++)
+            {
+                Quaternion absRotation;
+                Vector3 absTranslation;
+                var oneBone = boneList[x];
+                var parent = oneBone.Parent;
+                if (parent < 0)
+                {
+                    absRotation = Quaternion.Identity;
+                    absTranslation = Vector3.Zero;
+                }
+                else
+                {
+                    absRotation = motionRotationList[parent] * absRotationList[parent] * motionRotationList[x];
+                    absTranslation = absTranslationList[parent];
+                }
+
+                var localTranslation = Vector3.Transform(new Vector3(oneBone.TranslationX, oneBone.TranslationY, oneBone.TranslationZ), Matrix4x4.CreateFromQuaternion(absRotation));
+                absTranslationList[x] = absTranslation + localTranslation;
+
+                var localRotation = Quaternion.Identity;
+                if (oneBone.RotationZ != 0)
+                    localRotation *= (Quaternion.CreateFromAxisAngle(Vector3.UnitZ, oneBone.RotationZ));
+                if (oneBone.RotationY != 0)
+                    localRotation *= (Quaternion.CreateFromAxisAngle(Vector3.UnitY, oneBone.RotationY));
+                if (oneBone.RotationX != 0)
+                    localRotation *= (Quaternion.CreateFromAxisAngle(Vector3.UnitX, oneBone.RotationX));
+                absRotationList[x] = absRotation * localRotation;
+            }
+            for (int x = 0; x < matrices.Length; x++)
+            {
+                var absMatrix = Matrix4x4.Identity;
+                absMatrix *= Matrix4x4.CreateFromQuaternion(absRotationList[x]);
+                absMatrix *= Matrix4x4.CreateTranslation(absTranslationList[x]);
+                matrices[x] = absMatrix;
+            }
+
+            model.ApplyMotion(matrices);
         }
     }
 }

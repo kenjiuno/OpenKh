@@ -65,8 +65,8 @@ namespace OpenKh.Game.States
             _shader = new KingdomShader(initDesc.ContentManager);
             _camera = new Camera()
             {
-                CameraPosition = new Vector3(0, 100, 200),
-                CameraRotationYawPitchRoll = new Vector3(90, 0, 10),
+                CameraPosition = new Vector3(0, 100, -380),
+                CameraRotationYawPitchRoll = new Vector3(90, 0, 0),
             };
             _menuState = new MenuState(this);
             _worldId = initDesc.StateSettings.GetInt("WorldId", 2);

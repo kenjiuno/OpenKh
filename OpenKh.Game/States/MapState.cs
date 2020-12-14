@@ -69,7 +69,11 @@ namespace OpenKh.Game.States
             _worldId = initDesc.StateSettings.GetInt("WorldId", 2);
             _placeId = initDesc.StateSettings.GetInt("PlaceId", 4);
             _spawnId = initDesc.StateSettings.GetInt("SpawnId", 99);
-            _field = new Kh2Field(Kernel, initDesc.StateSettings, _graphics.GraphicsDevice);
+            _field = new Kh2Field(
+                Kernel,
+                initDesc.StateSettings,
+                _graphics.GraphicsDevice,
+                _shader);
 
             BasicallyForceToReloadEverything();
             _menuState.Initialize(initDesc);
@@ -137,6 +141,7 @@ namespace OpenKh.Game.States
 
                 DrawAllMeshes(pass, /*passRenderOpaque=*/false);
             });
+            _field.Draw();
 
             if (_menuState.IsMenuOpen)
             {

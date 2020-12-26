@@ -1,8 +1,11 @@
 using NSubstitute;
+using OpenKh.Common;
 using OpenKh.Game.Events;
 using OpenKh.Game.Infrastructure;
+using OpenKh.Kh2;
 using OpenKh.Kh2.Ard;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Xunit;
 
@@ -230,7 +233,7 @@ namespace OpenKh.Tests.Engine
             Assert.Equal(0f, actualRoll, 0);
             Assert.Equal(48.41f, actualFov, 0);
         }
-        
+
         [Theory]
         [InlineData(122, -123.61f, -122.43f)]
         [InlineData(140, -123.68f, -122.80f)]
@@ -432,5 +435,40 @@ namespace OpenKh.Tests.Engine
             {
                 CameraDataValue(value, Kh2.Motion.Interpolation.Hermite, 0, 0, 0)
             };
+
+        public class UseRealFiles
+        {
+            private static string KH2Dir = @"H:\KH2fm.OpenKh\";
+
+            public static IEnumerable<object[]> Source()
+            {
+                foreach (var ardFile in Directory.GetFiles(KH2Dir, "ard/*.ard"))
+                {
+                    foreach (var entry in File.OpenRead(ardFile).Using(Bar.Read)
+                        .Where(it => it.Type == Bar.EntryType.AnimationLoader)
+                    )
+                    {
+                        yield return new object[] { ardFile.Substring(KH2Dir.Length).Replace("\\", "/"), entry.Name };
+                    }
+                }
+            }
+
+            [Theory]
+            [MemberData(nameof(Source))]
+            public void AnimationLoaderTests(string ardFile, string eventName)
+            {
+                var entry = File.OpenRead(Path.Combine(KH2Dir, ardFile)).Using(Bar.Read).Single(it => it.Name == eventName && it.Type == Bar.EntryType.AnimationLoader);
+
+                var fakeField = Substitute.For<IField>();
+                var eventPlayer = new EventPlayer(fakeField, Event.Read(entry.Stream));
+
+                eventPlayer.Initialize();
+
+                while (!eventPlayer.IsEnd)
+                {
+                    eventPlayer.Update(1 / 60.0);
+                }
+            }
+        }
     }
 }

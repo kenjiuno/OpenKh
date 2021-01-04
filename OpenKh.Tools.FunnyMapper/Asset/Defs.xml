@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Defs>
+    <Bg Name="Floor" Height="0">
+        <Floor Texture="floor.png" />
+    </Bg>
+    <Bg Name="Wall" Height="256">
+        <Floor Texture="wall.png" />
+        <Wall Texture="stone.png" />
+    </Bg>
+    <Bg Name=".Void" Height="256">
+        <Wall Texture="border.png" />
+    </Bg>
+    <Actor Name="Player" Preview="player.png">
+        
+    </Actor>
+</Defs>

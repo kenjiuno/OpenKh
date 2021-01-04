@@ -1,0 +1,16 @@
+<Application x:Class="OpenKh.Tools.FunnyMapper.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:OpenKh.Tools.FunnyMapper"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Fluent;Component/Themes/Generic.xaml" />
+
+                <!-- See: https://fluentribbon.github.io/documentation/styles_since_7 -->
+                <ResourceDictionary Source="pack://application:,,,/Fluent;component/Themes/Themes/Light.Steel.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -7,7 +7,7 @@
         <Floor Texture="wall.png" />
         <Wall Texture="stone.png" />
     </Bg>
-    <Bg Name=".Void" Height="256">
+    <Bg Name=".Void" Height="512">
         <Wall Texture="border.png" />
     </Bg>
     <Actor Name="Player" Preview="player.png">

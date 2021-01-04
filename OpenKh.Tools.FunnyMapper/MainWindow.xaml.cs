@@ -1,6 +1,7 @@
 using Fluent;
 using Microsoft.Win32;
 using Microsoft.WindowsAPICodePack.Dialogs;
+using OpenKh.Tools.FunnyMapper.Extensions;
 using OpenKh.Tools.FunnyMapper.Models;
 using OpenKh.Tools.FunnyMapper.Utils;
 using Optional;
@@ -11,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -60,6 +62,8 @@ namespace OpenKh.Tools.FunnyMapper
             internal Image overlay;
             internal TBg bg;
             internal TActor actor;
+
+            internal bool HasFloor => bg != null;
         }
 
         class SaveCell
@@ -183,6 +187,21 @@ namespace OpenKh.Tools.FunnyMapper
         private MapCell GetCell(int x, int y)
         {
             return cells[y, x];
+        }
+
+        private MapCell GetCellOrNull(int x, int y)
+        {
+            if ((uint)x < Cx && (uint)y < Cy)
+            {
+                return cells[y, x];
+            }
+            return null;
+        }
+
+        private TBg GetCellBg(int x, int y)
+        {
+            var cell = GetCellOrNull(x, y) ?? GetVoidCell();
+            return cell.bg ?? GetVoidCell().bg;
         }
 
         private string DescribeCellForCurrentTool(MapCell cell)
@@ -376,6 +395,135 @@ namespace OpenKh.Tools.FunnyMapper
             };
         }
 
+        enum SurfaceSide
+        {
+            /// <summary>
+            /// Floor
+            /// </summary>
+            Floor,
+            /// <summary>
+            /// You see north, wall facing south
+            /// </summary>
+            N,
+            /// <summary>
+            /// You see east, wall facing west
+            /// </summary>
+            E,
+            /// <summary>
+            /// You see south, wall facing noth
+            /// </summary>
+            S,
+            /// <summary>
+            /// You see west, wall facing east
+            /// </summary>
+            W,
+        }
+
+        class PhysSurface
+        {
+            internal SurfaceSide side;
+            internal TBg bg;
+        }
+
+        MapCell GetVoidCell()
+        {
+            return new MapCell
+            {
+                bg = defs.Bg.Where(it => it.Name == ".Void").FirstOrDefault() ?? new TBg { Height = 1000, },
+            };
+        }
+
+        class Ax
+        {
+            internal int dx;
+            internal int dy;
+            internal SurfaceSide side;
+        }
+
+        static readonly Ax[] axis = new Ax[] {
+            new Ax { dx =  0, dy = -1, side = SurfaceSide.N },
+            new Ax { dx =  1, dy =  0, side = SurfaceSide.E },
+            new Ax { dx = -1, dy =  0, side = SurfaceSide.W },
+            new Ax { dx =  0, dy =  1, side = SurfaceSide.S },
+        };
+
+        IEnumerable<PhysSurface> GetVisibleSurfaces(MapCell floorCell)
+        {
+            if (floorCell.HasFloor)
+            {
+                yield return new PhysSurface { side = SurfaceSide.Floor, bg = floorCell.bg, };
+
+                foreach (var ax in axis)
+                {
+                    var bg = GetCellBg(floorCell.x + ax.dx, floorCell.y + ax.dy);
+                    if (bg.Height > floorCell.bg.Height)
+                    {
+                        yield return new PhysSurface { side = ax.side, bg = bg, };
+                    }
+                }
+            }
+        }
+
+        class MeshCache
+        {
+            private Assimp.Scene scene;
+            private Assimp.Node root;
+            private Dictionary<string, Assimp.Mesh> meshes = new Dictionary<string, Assimp.Mesh>();
+
+            public MeshCache(Assimp.Scene scene, Assimp.Node root)
+            {
+                this.scene = scene;
+                this.root = root;
+            }
+
+            internal Assimp.Mesh GetOrCreate(TBg bg, SurfaceSide side)
+            {
+                var surf = GetSurf(bg, side);
+                var key = GetKey(surf);
+                if (!meshes.TryGetValue(key, out Assimp.Mesh mesh))
+                {
+                    mesh = new Assimp.Mesh($"for_{key}", Assimp.PrimitiveType.Polygon);
+                    var mat = new Assimp.Material();
+                    mat.Name = $"mat_{key}";
+                    mat.TextureDiffuse = new Assimp.TextureSlot()
+                    {
+                        FilePath = surf?.Texture,
+                    };
+                    mesh.MaterialIndex = scene.Materials.Count;
+                    scene.Materials.Add(mat);
+
+                    root.MeshIndices.Add(scene.Meshes.Count);
+                    scene.Meshes.Add(mesh);
+
+                    meshes[key] = mesh;
+                }
+
+                return mesh;
+            }
+
+            private TSurface GetSurf(TBg bg, SurfaceSide side)
+            {
+                if (side == SurfaceSide.Floor)
+                {
+                    return bg.Floor;
+                }
+                else
+                {
+                    return bg.Wall?.FirstOrDefault();
+                }
+            }
+
+            private string GetKey(TSurface surf)
+            {
+                return (surf != null) ? NormalizeFileNameForId(surf.Texture) : "UnnamedSurface";
+            }
+        }
+
+        private static string NormalizeFileNameForId(string name)
+        {
+            return Regex.Replace(name, "[" + Regex.Escape("." + new string(Path.GetInvalidPathChars())) + "]", "_");
+        }
+
         private void publishMenu_Click(object sender, RoutedEventArgs e)
         {
             var popup = new SaveFileDialog
@@ -414,43 +562,48 @@ namespace OpenKh.Tools.FunnyMapper
                     {
                         var root = new Assimp.Node("Root");
                         {
+                            var meshCache = new MeshCache(scene, root);
+
                             foreach (var cell in EachCell().Where(it => it.bg != null))
                             {
-                                var mesh = new Assimp.Mesh("", Assimp.PrimitiveType.Triangle);
+                                var org = GetOriginVectorOf(cell);
 
-                                var org = GetOriginOf(cell);
-                                // Top North Left
-                                // Top North Right
-                                // Top South Left
-                                // Top South Right
-                                // Bottom North Left
-                                // Bottom North Right
-                                // Bottom South Left
-                                // Bottom South Right
-                                mesh.Vertices.Add(new Assimp.Vector3D(org.X - BlkSize / 2, org.Y, org.Z + BlkSize / 2));
-                                mesh.Vertices.Add(new Assimp.Vector3D(org.X + BlkSize / 2, org.Y, org.Z + BlkSize / 2));
-                                mesh.Vertices.Add(new Assimp.Vector3D(org.X - BlkSize / 2, org.Y, org.Z - BlkSize / 2));
-                                mesh.Vertices.Add(new Assimp.Vector3D(org.X + BlkSize / 2, org.Y, org.Z - BlkSize / 2));
-                                mesh.Vertices.Add(new Assimp.Vector3D(org.X - BlkSize / 2, 0, org.Z + BlkSize / 2));
-                                mesh.Vertices.Add(new Assimp.Vector3D(org.X + BlkSize / 2, 0, org.Z + BlkSize / 2));
-                                mesh.Vertices.Add(new Assimp.Vector3D(org.X - BlkSize / 2, 0, org.Z - BlkSize / 2));
-                                mesh.Vertices.Add(new Assimp.Vector3D(org.X + BlkSize / 2, 0, org.Z - BlkSize / 2));
-
-                                var mat = new Assimp.Material();
-                                mat.Name = $"mat{scene.Materials.Count}floor";
-                                mat.TextureDiffuse = new Assimp.TextureSlot()
+                                foreach (var surf in GetVisibleSurfaces(cell))
                                 {
-                                    FilePath = cell.bg.Floor.Texture,
-                                };
-                                mesh.MaterialIndex = scene.Materials.Count;
-                                scene.Materials.Add(mat);
+                                    var topY = surf.bg?.Height ?? org.Y;
 
-                                // Left hand
-                                mesh.Faces.Add(new Assimp.Face(new int[] { 0, 1, 3 }));
-                                mesh.Faces.Add(new Assimp.Face(new int[] { 0, 3, 2 }));
+                                    var mesh = meshCache.GetOrCreate(surf.bg, surf.side);
 
-                                root.MeshIndices.Add(scene.Meshes.Count);
-                                scene.Meshes.Add(mesh);
+                                    // bottom/top north/source left/right
+                                    var bnl = (new Assimp.Vector3D(org.X - BlkSize / 2, org.Y, org.Z + BlkSize / 2));
+                                    var bnr = (new Assimp.Vector3D(org.X + BlkSize / 2, org.Y, org.Z + BlkSize / 2));
+                                    var bsl = (new Assimp.Vector3D(org.X - BlkSize / 2, org.Y, org.Z - BlkSize / 2));
+                                    var bsr = (new Assimp.Vector3D(org.X + BlkSize / 2, org.Y, org.Z - BlkSize / 2));
+                                    var tnl = (new Assimp.Vector3D(org.X - BlkSize / 2, topY, org.Z + BlkSize / 2));
+                                    var tnr = (new Assimp.Vector3D(org.X + BlkSize / 2, topY, org.Z + BlkSize / 2));
+                                    var tsl = (new Assimp.Vector3D(org.X - BlkSize / 2, topY, org.Z - BlkSize / 2));
+                                    var tsr = (new Assimp.Vector3D(org.X + BlkSize / 2, topY, org.Z - BlkSize / 2));
+
+                                    // Left handed
+                                    switch (surf.side)
+                                    {
+                                        case SurfaceSide.Floor:
+                                            mesh.AddQuad(bnl, bnr, bsr, bsl);
+                                            break;
+                                        case SurfaceSide.N:
+                                            mesh.AddQuad(bnl, tnl, tnr, bnr);
+                                            break;
+                                        case SurfaceSide.E:
+                                            mesh.AddQuad(bnr, tnr, tsr, bsr);
+                                            break;
+                                        case SurfaceSide.S:
+                                            mesh.AddQuad(bsr, tsr, tsl, bsl);
+                                            break;
+                                        case SurfaceSide.W:
+                                            mesh.AddQuad(bsl, tsl, tnl, bnl);
+                                            break;
+                                    }
+                                }
                             }
                         }
                         scene.RootNode = root;
@@ -466,7 +619,7 @@ namespace OpenKh.Tools.FunnyMapper
                     firstSp.Entities = new List<Kh2.Ard.SpawnPoint.Entity>();
                     foreach (var cell in EachCell().Where(it => it.actor != null))
                     {
-                        var org = GetOriginOf(cell);
+                        var org = GetOriginVectorOf(cell);
 
                         if (!string.IsNullOrEmpty(cell.actor.SpawnPoint))
                         {
@@ -505,7 +658,7 @@ namespace OpenKh.Tools.FunnyMapper
             }
         }
 
-        private Vector3 GetOriginOf(MapCell cell)
+        private Vector3 GetOriginVectorOf(MapCell cell)
         {
             return new Vector3(
                 BlkSize * cell.x,

@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
@@ -33,6 +34,9 @@ namespace OpenKh.Tools.FunnyMapper
         private MapCell[,] cells;
         private readonly string baseDir;
         private readonly string assetDir;
+        private readonly string templateDir;
+        private readonly ISerializer toYaml;
+        private readonly IDeserializer fromYaml;
         private string lastFile;
 
         public MainWindow()
@@ -41,6 +45,10 @@ namespace OpenKh.Tools.FunnyMapper
 
             baseDir = AppDomain.CurrentDomain.BaseDirectory;
             assetDir = Path.Combine(baseDir, "Asset");
+            templateDir = Path.Combine(baseDir, "Templates");
+
+            toYaml = new SerializerBuilder().Build();
+            fromYaml = new DeserializerBuilder().Build();
         }
 
         class MapCell
@@ -142,6 +150,17 @@ namespace OpenKh.Tools.FunnyMapper
                         Tag = actor,
                     }
                 );
+            }
+        }
+
+        private IEnumerable<MapCell> EachCell()
+        {
+            for (var y = 0; y < Cy; y++)
+            {
+                for (var x = 0; x < Cx; x++)
+                {
+                    yield return cells[y, x];
+                }
             }
         }
 
@@ -384,16 +403,115 @@ namespace OpenKh.Tools.FunnyMapper
                 }
 
                 {
-                    var template = Scriban.Template.Parse(File.ReadAllText(Path.Combine(assetDir, "builder.bat.txt")));
+                    var template = Scriban.Template.Parse(File.ReadAllText(Path.Combine(templateDir, "prefix.spawnscript.txt")));
+                    var result = template.Render(templateContext);
+                    File.WriteAllText(Path.Combine(outDir, "user.spawnscript.txt"), result);
+                }
+
+                {
+                    var fbxFile = Path.Combine(outDir, "user.fbx");
+                    var scene = new Assimp.Scene();
+                    {
+                        var root = new Assimp.Node("Root");
+                        {
+                            foreach (var cell in EachCell().Where(it => it.bg != null))
+                            {
+                                var mesh = new Assimp.Mesh("", Assimp.PrimitiveType.Triangle);
+
+                                var org = GetOriginOf(cell);
+                                // Top North Left
+                                // Top North Right
+                                // Top South Left
+                                // Top South Right
+                                // Bottom North Left
+                                // Bottom North Right
+                                // Bottom South Left
+                                // Bottom South Right
+                                mesh.Vertices.Add(new Assimp.Vector3D(org.X - BlkSize / 2, org.Y, org.Z + BlkSize / 2));
+                                mesh.Vertices.Add(new Assimp.Vector3D(org.X + BlkSize / 2, org.Y, org.Z + BlkSize / 2));
+                                mesh.Vertices.Add(new Assimp.Vector3D(org.X - BlkSize / 2, org.Y, org.Z - BlkSize / 2));
+                                mesh.Vertices.Add(new Assimp.Vector3D(org.X + BlkSize / 2, org.Y, org.Z - BlkSize / 2));
+                                mesh.Vertices.Add(new Assimp.Vector3D(org.X - BlkSize / 2, 0, org.Z + BlkSize / 2));
+                                mesh.Vertices.Add(new Assimp.Vector3D(org.X + BlkSize / 2, 0, org.Z + BlkSize / 2));
+                                mesh.Vertices.Add(new Assimp.Vector3D(org.X - BlkSize / 2, 0, org.Z - BlkSize / 2));
+                                mesh.Vertices.Add(new Assimp.Vector3D(org.X + BlkSize / 2, 0, org.Z - BlkSize / 2));
+
+                                var mat = new Assimp.Material();
+                                mat.Name = $"mat{scene.Materials.Count}floor";
+                                mat.TextureDiffuse = new Assimp.TextureSlot()
+                                {
+                                    FilePath = cell.bg.Floor.Texture,
+                                };
+                                mesh.MaterialIndex = scene.Materials.Count;
+                                scene.Materials.Add(mat);
+
+                                // Left hand
+                                mesh.Faces.Add(new Assimp.Face(new int[] { 0, 1, 3 }));
+                                mesh.Faces.Add(new Assimp.Face(new int[] { 0, 3, 2 }));
+
+                                root.MeshIndices.Add(scene.Meshes.Count);
+                                scene.Meshes.Add(mesh);
+                            }
+                        }
+                        scene.RootNode = root;
+                    }
+                    using var assimp = new Assimp.AssimpContext();
+                    assimp.ExportFile(scene, fbxFile, "fbx");
+                }
+
+                {
+                    var list = new List<Kh2.Ard.SpawnPoint>();
+                    var firstSp = new Kh2.Ard.SpawnPoint();
+                    list.Add(firstSp);
+                    firstSp.Entities = new List<Kh2.Ard.SpawnPoint.Entity>();
+                    foreach (var cell in EachCell().Where(it => it.actor != null))
+                    {
+                        var org = GetOriginOf(cell);
+
+                        if (!string.IsNullOrEmpty(cell.actor.SpawnPoint))
+                        {
+                            var sp = fromYaml.Deserialize<Kh2.Ard.SpawnPoint>(cell.actor.SpawnPoint);
+                            if (sp?.Entities != null)
+                            {
+                                firstSp.Entities.AddRange(
+                                    sp.Entities
+                                        .Select(
+                                            let =>
+                                            {
+                                                let.PositionX += org.X;
+                                                let.PositionY += org.Y;
+                                                let.PositionZ += org.Z;
+                                                return let;
+                                            }
+                                        )
+                                );
+                            }
+                        }
+                    }
+                    var result = toYaml.Serialize(list);
+                    File.WriteAllText(Path.Combine(outDir, "user.spawnpoint.yml"), result, Encoding.Default);
+                }
+
+                {
+                    var template = Scriban.Template.Parse(File.ReadAllText(Path.Combine(templateDir, "builder.bat.txt")));
                     var result = template.Render(templateContext);
                     File.WriteAllText(Path.Combine(outDir, "builder.bat"), result, Encoding.Default);
                 }
                 {
-                    var template = Scriban.Template.Parse(File.ReadAllText(Path.Combine(assetDir, "builder.ps1.txt")));
+                    var template = Scriban.Template.Parse(File.ReadAllText(Path.Combine(templateDir, "builder.ps1.txt")));
                     var result = template.Render(templateContext);
                     File.WriteAllText(Path.Combine(outDir, "builder.ps1"), result, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
                 }
             }
+        }
+
+        private Vector3 GetOriginOf(MapCell cell)
+        {
+            return new Vector3(
+                BlkSize * cell.x,
+                cell.bg?.Height ?? 0f,
+                -BlkSize * cell.y
+            );
         }
     }
 }

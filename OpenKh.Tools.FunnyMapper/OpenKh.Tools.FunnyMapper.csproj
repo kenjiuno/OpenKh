@@ -8,36 +8,22 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\OpenKh.Kh2\OpenKh.Kh2.csproj" />
+
         <PackageReference Include="Fluent.Ribbon" Version="8.0.3" />
         <PackageReference Include="Optional" Version="4.0.0" />
         <PackageReference Include="YamlDotNet" Version="9.1.0" />
         <PackageReference Include="WindowsAPICodePack-Core" Version="1.1.2" />
         <PackageReference Include="Scriban" Version="3.3.2" />
+        <PackageReference Include="System.Numerics.Vectors" Version="4.5.0" />
+        <PackageReference Include="AssimpNet" Version="5.0.0-beta1" />
     </ItemGroup>
 
     <ItemGroup>
-        <None Update="Asset\builder.bat.txt">
-          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-        <None Update="Asset\builder.ps1.txt">
-          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-        <None Update="Resources\error.png">
+        <None Update="Asset\*">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
-        <None Update="Asset\Defs.xml">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-        <None Update="Asset\floor.png">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-        <None Update="Asset\player.png">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-        <None Update="Asset\stone.png">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-        <None Update="Asset\wall.png">
+        <None Update="Templates\*">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
     </ItemGroup>

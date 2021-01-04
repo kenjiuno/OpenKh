@@ -12,5 +12,8 @@ namespace OpenKh.Tools.FunnyMapper.Models
 
         [XmlAttribute]
         public string Preview;
+
+        [XmlElement]
+        public string SpawnPoint;
     }
 }

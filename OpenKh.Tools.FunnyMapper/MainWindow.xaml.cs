@@ -43,6 +43,7 @@ namespace OpenKh.Tools.FunnyMapper
         private readonly string baseDir;
         private readonly string assetDir;
         private readonly string templateDir;
+        private readonly string scriptsDir;
         private readonly ISerializer toYaml;
         private readonly IDeserializer fromYaml;
         private string lastFile;
@@ -55,6 +56,7 @@ namespace OpenKh.Tools.FunnyMapper
             baseDir = AppDomain.CurrentDomain.BaseDirectory;
             assetDir = Path.Combine(baseDir, "Asset");
             templateDir = Path.Combine(baseDir, "Templates");
+            scriptsDir = Path.Combine(baseDir, "Scripts");
 
             toYaml = new SerializerBuilder().Build();
             fromYaml = new DeserializerBuilder().Build();
@@ -135,6 +137,10 @@ namespace OpenKh.Tools.FunnyMapper
                 );
             }
 
+            var postAll = Directory.GetFiles(scriptsDir, "Post_*.ps1")
+                .Select(it => Path.GetFileName(it))
+                .ToArray();
+
             var propertyChanged = Observable.FromEventPattern<PropertyChangedEventArgs>(
                 Settings.Default,
                 nameof(Settings.Default.PropertyChanged)
@@ -149,7 +155,28 @@ namespace OpenKh.Tools.FunnyMapper
                     }
                 );
 
+            propertyChanged
+                .Where(e => e.EventArgs.PropertyName == nameof(Settings.Default.PostProcessors))
+                .Select(it => Settings.Default.PostProcessors)
+                .Subscribe(
+                    list =>
+                    {
+                        var listed = list.Cast<string>().ToArray();
+                        postScripts.ItemsSource = postAll
+                            .Select(file => new Checker { Text = file, Check = listed.Contains(file), })
+                            .ToArray();
+                    }
+                );
+
             Settings.Default.RecentlyOpenedFiles = Settings.Default.RecentlyOpenedFiles ?? new System.Collections.Specialized.StringCollection();
+            Settings.Default.PreProcessors = Settings.Default.PreProcessors ?? new System.Collections.Specialized.StringCollection();
+            Settings.Default.PostProcessors = Settings.Default.PostProcessors ?? new System.Collections.Specialized.StringCollection();
+        }
+
+        class Checker
+        {
+            public string Text { get; set; }
+            public bool Check { get; set; }
         }
 
         private IEnumerable<MapCell> EachCell()
@@ -328,15 +355,11 @@ namespace OpenKh.Tools.FunnyMapper
             FromSave(save);
             lastFile = fileName;
 
-            var list = new System.Collections.Specialized.StringCollection();
-            list.AddRange(
-                Settings.Default.RecentlyOpenedFiles
-                    .Cast<string>()
-                    .Where(it => it != lastFile)
-                    .Prepend(lastFile)
-                    .ToArray()
-            );
-            Settings.Default.RecentlyOpenedFiles = list;
+            Settings.Default.RecentlyOpenedFiles = Settings.Default.RecentlyOpenedFiles
+                .Cast<string>()
+                .Where(it => it != lastFile)
+                .Prepend(lastFile)
+                .ToStringCollection();
             Settings.Default.Save();
         }
 
@@ -405,8 +428,9 @@ namespace OpenKh.Tools.FunnyMapper
                 var outDir = Path.GetDirectoryName(popup.FileName);
                 var model = new Publisher.Param
                 {
-                    OpenkhDir = baseDir,
+                    Paths = new string[] { baseDir, scriptsDir, },
                     Prefix = "user",
+                    PostScripts = GetCurrentPostProcessors(),
                 };
 
                 var publisher = new Publisher(
@@ -421,8 +445,18 @@ namespace OpenKh.Tools.FunnyMapper
                     toYaml,
                     fromYaml
                 );
+
+                Settings.Default.PostProcessors = GetCurrentPostProcessors().ToStringCollection();
+                Settings.Default.Save();
+
+                bs.IsOpen = false;
             }
         }
+
+        private IEnumerable<string> GetCurrentPostProcessors() => postScripts.ItemsSource
+            .Cast<Checker>()
+            .Where(it => it.Check)
+            .Select(it => it.Text);
 
         private void Button_Click(object sender, RoutedEventArgs e)
         {

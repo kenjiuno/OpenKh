@@ -32,7 +32,7 @@
                             <Grid Style="{StaticResource BackstageGrid}">
                                 <StackPanel Orientation="Vertical">
                                     <TextBlock HorizontalAlignment="Left" Margin="0,3">Recently opened files:</TextBlock>
-                                    <ItemsControl Name="recentlyOpenedFiles" MinHeight="60">
+                                    <ItemsControl Name="recentlyOpenedFiles" MinHeight="60" Padding="3">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal">
@@ -49,7 +49,31 @@
                             </Grid>
                         </Fluent:BackstageTabItem>
                         <Fluent:Button Header="SaveAs" Name="saveMenu" Click="saveMenu_Click" />
-                        <Fluent:Button Header="PublishTo" Name="publishMenu" Click="publishMenu_Click" />
+                        <Fluent:BackstageTabItem Header="Publisher">
+                            <Grid Style="{StaticResource BackstageGrid}">
+                                <StackPanel Orientation="Vertical">
+                                    <TextBlock HorizontalAlignment="Left" Margin="0,3">Pre processors:</TextBlock>
+                                    <ItemsControl Name="preScripts" MinHeight="60" Padding="3">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox Content="{Binding Text}" IsChecked="{Binding Check}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <TextBlock HorizontalAlignment="Left" Margin="0,3">Post processors:</TextBlock>
+                                    <ItemsControl Name="postScripts" MinHeight="60" Padding="3">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox Content="{Binding Text}" IsChecked="{Binding Check}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Button Name="publishMenu" Click="publishMenu_Click" HorizontalAlignment="Left" Padding="5">Publish...</Button>
+                                </StackPanel>
+                            </Grid>
+                        </Fluent:BackstageTabItem>
                     </Fluent:BackstageTabControl>
                 </Fluent:Backstage>
             </Fluent:Ribbon.Menu>

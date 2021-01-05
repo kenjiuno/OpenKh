@@ -19,8 +19,9 @@ namespace OpenKh.Tools.FunnyMapper.Utils
 
         public class Param
         {
-            public string OpenkhDir { get; set; }
+            public string[] Paths { get; set; }
             public string Prefix { get; set; } = "user";
+            public IEnumerable<string> PostScripts { get; set; }
         }
 
         public Publisher(Defs defs, CoordSpace space, IEnumerable<MapCell> cells)

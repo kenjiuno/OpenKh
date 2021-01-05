@@ -1,12 +1,25 @@
 $ErrorActionPreference = "Stop"
 
-$env:Path += ";{{ OpenkhDir }}"
+{{ for path in Paths }}
+$env:Path += ";{{ path }}"
+{{ end }}
 
-Write-Progress "SpawnScript compile" -percentComplete 0
+Write-Progress "Loading config" -percentComplete 0
+
+. Config.ps1
+
+Write-Progress "SpawnScript compile" -percentComplete 20
 OpenKh.Command.SpawnScript.exe compile {{ Prefix }}.spawnscript.txt -o {{ Prefix }}.spawnscript
 
-Write-Progress "SpawnScript repoint" -percentComplete 20
+Write-Progress "SpawnScript repoint" -percentComplete 40
 OpenKh.Command.SpawnScript.exe repoint {{ Prefix }}.spawnpoint.yml -o {{ Prefix }}.spawnpoint
 
-Write-Progress "MapGen" -percentComplete 40
+Write-Progress "MapGen" -percentComplete 60
 OpenKh.Command.MapGen.exe {{ Prefix }}.fbx {{ Prefix }}.map
+
+$OutputMap = "{{ Prefix }}.map"
+
+Write-Progress "Running PostScripts" -percentComplete 80
+{{ for ps1 in PostScripts }}
+{{ ps1 }}
+{{ end }}

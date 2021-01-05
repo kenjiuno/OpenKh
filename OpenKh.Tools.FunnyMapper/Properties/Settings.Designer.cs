@@ -33,5 +33,27 @@ namespace OpenKh.Tools.FunnyMapper.Properties {
                 this["RecentlyOpenedFiles"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        public global::System.Collections.Specialized.StringCollection PreProcessors {
+            get {
+                return ((global::System.Collections.Specialized.StringCollection)(this["PreProcessors"]));
+            }
+            set {
+                this["PreProcessors"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        public global::System.Collections.Specialized.StringCollection PostProcessors {
+            get {
+                return ((global::System.Collections.Specialized.StringCollection)(this["PostProcessors"]));
+            }
+            set {
+                this["PostProcessors"] = value;
+            }
+        }
     }
 }

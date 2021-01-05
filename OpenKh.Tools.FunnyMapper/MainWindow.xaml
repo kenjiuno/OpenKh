@@ -12,6 +12,9 @@
     >
     <FrameworkElement.Resources>
         <Image Source="Resources/error.png" x:Key="errorImage" />
+        <Style x:Key="BackstageGrid" TargetType="Grid">
+            <Setter Property="Margin" Value="20,20" />
+        </Style>
     </FrameworkElement.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -21,11 +24,30 @@
         <Fluent:Ribbon Grid.Row="0">
             <!--Backstage-->
             <Fluent:Ribbon.Menu>
-                <Fluent:Backstage>
+                <Fluent:Backstage Name="bs">
                     <Fluent:BackstageTabControl>
                         <Fluent:BackstageTabItem Header="Select below:" />
                         <Fluent:Button Header="New" Name="newMenu" Click="newMenu_Click" />
-                        <Fluent:Button Header="Open" Name="openMenu" Click="openMenu_Click" />
+                        <Fluent:BackstageTabItem Header="Open">
+                            <Grid Style="{StaticResource BackstageGrid}">
+                                <StackPanel Orientation="Vertical">
+                                    <TextBlock HorizontalAlignment="Left" Margin="0,3">Recently opened files:</TextBlock>
+                                    <ItemsControl Name="recentlyOpenedFiles" MinHeight="60">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button Content="Open this file" Click="Button_Click" Padding="5" />
+                                                    <TextBlock Text="  " />
+                                                    <TextBlock Text="{Binding Mode=OneWay}" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock HorizontalAlignment="Left" Margin="0,3">Other options:</TextBlock>
+                                    <Button Name="openMenu" Click="openMenu_Click" HorizontalAlignment="Left" Padding="5">Open...</Button>
+                                </StackPanel>
+                            </Grid>
+                        </Fluent:BackstageTabItem>
                         <Fluent:Button Header="SaveAs" Name="saveMenu" Click="saveMenu_Click" />
                         <Fluent:Button Header="PublishTo" Name="publishMenu" Click="publishMenu_Click" />
                     </Fluent:BackstageTabControl>

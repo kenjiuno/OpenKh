@@ -2,7 +2,7 @@ name: msbuild
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "kenjiuno-patch-1" ]
   pull_request:
     branches: [ "master" ]
 

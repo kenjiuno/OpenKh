@@ -1,0 +1,204 @@
+@startuml MDLX parser
+package "OpenKh.Kh2" {
+
+class Mdlx {
+    + bool IsMap
+    + List<SubModel> SubModels
+    + Model Model
+    + ModelBackground ModelBackground
+    + Mdlx(Stream stream)
+    + void Write(Stream stream)
+    + {static} void WriteAsModel(Stream stream, List<SubModel> subModels)
+    + {static} Mdlx CreateFromMapModel(ModelBackground model)
+    + {static} Mdlx CreateModelFromScratch()
+}
+
+Mdlx --- Model
+Mdlx --* SubModel
+Mdlx -- ModelBackground
+
+class DmaVif {
+    + int TextureIndex
+    + int[] Alaxi
+    {field} + byte[] VifPacket  // decode with: new VifUnpacker(it)
+    + int BaseAddress
+
+    + DmaVif(int texi, int[] alaxi, byte[] bin, int baseAddress)
+}
+
+class DmaChain {
+    + int RenderFlags
+    + int TextureIndex
+    + int Unk08
+    + int DmaLength
+    + List<DmaVif> DmaVifs
+    + byte renderFlag1
+    + byte renderFlag2
+    + byte renderFlag3
+    + byte renderFlag4
+
+}
+
+DmaChain --* DmaVif
+
+class SubModel {
+    + int Type
+    + int Unk04
+    + int Unk08
+    + short BoneCount
+    + short Unk
+    + int DmaChainCount
+
+    + List<Bone> Bones
+    + byte[] UnknownData
+    + List<DmaChain> DmaChains
+
+}
+
+SubModel --* Bone
+SubModel --* DmaChain
+
+class Bone {
+    + int Index 
+    + int Parent 
+    + int Unk08 
+    + int Unk0c 
+    + float ScaleX 
+    + float ScaleY 
+    + float ScaleZ 
+    + float ScaleW 
+    + float RotationX 
+    + float RotationY 
+    + float RotationZ 
+    + float RotationW 
+    + float TranslationX 
+    + float TranslationY 
+    + float TranslationZ 
+    + float TranslationW 
+
+}
+
+class ModelBackground {
+    + List<ushort> DmaChainIndexRemapTable
+    + List<ModelChunk> Chunks
+    + BackgroundType BgType
+    + int Attribute
+    + ushort ShadowCount
+    + ushort TextureCount
+    + ushort OctalTreeCount
+    + List<ushort[]> vifPacketRenderingGroup
+
+    + ModelBackground()
+    + ModelBackground(Stream stream)
+    + int GroupCount
+    + int GetDrawPolygonCount(IList<byte> displayFlags)
+
+}
+
+ModelBackground --* ModelChunk
+
+abstract class Model {
+    + {abstract} int GroupCount
+    + int Flags
+    + int GetDrawPolygonCount(IList<byte> displayFlags)
+    + void Write(Stream stream)
+    + {static} Model Read(Stream stream)
+}
+
+Model <|-- ModelBackground
+
+class ModelChunk {
+    {field} + byte[] VifPacket  // decode with: new VifUnpacker(it)
+    + short TextureId
+    + short Priority
+    + short TransparencyFlag
+
+    + bool IsSpecular
+
+    + bool HasVertexBuffer
+
+    + int Alternative
+
+    + bool IsAlphaSubtract
+
+    + bool IsAlphaAdd
+
+    + int UVScrollIndex
+
+    + bool IsShadowOff
+
+    + bool IsPhase
+
+    + uint DrawPriority
+
+    + bool IsMulti
+
+    + bool IsAlpha
+    + short PolygonCount
+    + ushort[] DmaPerVif
+
+}
+
+class ModelLegacy {
+}
+
+class ModelMultiple {
+}
+
+class ModelSkeleton {
+}
+
+Model <|-- ModelLegacy
+Model <|-- ModelMultiple
+Model <|-- ModelSkeleton
+
+}
+
+package "OpenKh.Engine" {
+
+interface IModelMotion {
+    + List<MeshDescriptor> MeshDescriptors
+    + List<Mdlx.Bone> Bones
+    + Matrix4x4[] InitialPose
+    + Matrix4x4[] CurrentPose
+    + void ApplyMotion(Matrix4x4[] matrices)
+
+}
+
+class MdlxParser {
+    + MdlxParser(Mdlx mdlx)
+    + void ApplyMotion(Matrix4x4[] matrices)
+    + {static} bool IsEntity(Mdlx mdlx)
+    + {static} bool IsMap(Mdlx mdlx)
+    + List<MeshDescriptor> MeshDescriptors
+    + List<Mdlx.Bone> Bones
+    + Matrix4x4[] InitialPose
+    + Matrix4x4[] CurrentPose
+
+}
+
+IModelMotion <|-- MdlxParser
+
+Mdlx -- MdlxParser
+MdlxParser --* MeshDescriptor
+MdlxParser --* Bone
+
+class MeshDescriptor {
+    + PositionColoredTextured[] Vertices
+    + int[] Indices
+    + int TextureIndex
+    + bool IsOpaque
+
+}
+
+MeshDescriptor --* PositionColoredTextured
+
+class PositionColoredTextured {
+    + float X, Y, Z
+    + float Tu, Tv
+    + float R, G, B, A
+}
+
+}
+
+@enduml

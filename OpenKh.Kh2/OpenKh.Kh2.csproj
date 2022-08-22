@@ -15,6 +15,7 @@
     <ProjectReference Include="..\OpenKh.Common\OpenKh.Common.csproj" />
     <ProjectReference Include="..\OpenKh.Imaging\OpenKh.Imaging.csproj" />
     <ProjectReference Include="..\XeEngine.Tools.Public\Xe\Xe.csproj" />
+    <ProjectReference Include="..\OpenKh.Ps2\OpenKh.Ps2.csproj" />
   </ItemGroup>
 
   <ItemGroup>

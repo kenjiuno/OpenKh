@@ -1,0 +1,85 @@
+@startuml current
+title current dependency
+
+package OpenKh.Kh2 {
+}
+
+package OpenKh.Ps2 {
+    class VifUnpacker {
+
+    }
+}
+
+package OpenKh.Engine {
+}
+
+OpenKh.Kh2 +-- OpenKh.Engine
+OpenKh.Ps2 +-- OpenKh.Engine
+
+@enduml
+@startuml way1
+title Going to add MdlxBuilderLike inside OpenKh.Kh2
+
+package OpenKh.Kh2 {
+    class MdlxBuilderLike {
+
+    }
+}
+note as OpenKh.Kh2.csproj
+    <TargetFrameworks>netstandard2.0;net6.0</TargetFrameworks>
+endnote
+
+package OpenKh.Ps2 {
+    class VifUnpacker {
+
+    }
+}
+note as OpenKh.Ps2.csproj
+    <TargetFrameworks><b>netstandard2.0</b>;net6.0</TargetFrameworks>
+endnote
+
+package OpenKh.Engine {
+}
+
+OpenKh.Kh2 +-- OpenKh.Engine
+OpenKh.Ps2 +-- OpenKh.Kh2
+OpenKh.Ps2 +-- OpenKh.Engine
+
+@enduml
+@startuml way2
+title Going to add MdlxBuilderLike to new OpenKh.Kh2.MdlxMaker
+
+package OpenKh.Kh2 {
+}
+note as OpenKh.Kh2.csproj
+    <TargetFrameworks>netstandard2.0;net6.0</TargetFrameworks>
+endnote
+
+package OpenKh.Ps2 {
+    class VifUnpacker {
+
+    }
+}
+note as OpenKh.Ps2.csproj
+    <TargetFrameworks>net6.0</TargetFrameworks>
+endnote
+
+package OpenKh.Kh2.MdlxMaker {
+    class MdlxBuilderLike {
+
+    }
+}
+note as OpenKh.Kh2.MdlxMaker.csproj
+    <TargetFrameworks>net6.0</TargetFrameworks>
+endnote
+
+package OpenKh.Engine {
+}
+
+OpenKh.Kh2 +--- OpenKh.Engine
+OpenKh.Ps2 +--- OpenKh.Kh2
+OpenKh.Ps2 +--- OpenKh.Engine
+OpenKh.Kh2 +--- OpenKh.Kh2.MdlxMaker
+OpenKh.Ps2 +--- OpenKh.Kh2.MdlxMaker
+
+@enduml

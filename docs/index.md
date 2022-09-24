@@ -25,6 +25,7 @@ As of right now, the documentation contains info about the following games:
   * [PS4 HD assets](common/hdassets.md)
 * [Tools](tool/index.md)
 * [OpenKH Game Engine](engine/index.md)
+* [Contributors](contributors/index.md)
 
 ### Contributions are more than welcome where applicable!
 

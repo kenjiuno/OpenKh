@@ -140,7 +140,7 @@ namespace OpenKh.Tools.BbsEventTableEditor.ViewModels
 
             AboutCommand = new RelayCommand(x =>
             {
-                new AboutDialog(Assembly.GetExecutingAssembly()).ShowDialog();
+                new OpenKh.Tools.Common.Wpf.Dialogs.AboutDialog(Assembly.GetExecutingAssembly()).ShowDialog();
             }, x => true);
 
             EventsViewModel = new EventsViewModel();

@@ -25,9 +25,18 @@ namespace OpenKh.Kh2
             [Data(Count = 96)] public byte[] Unk { get; set; }
         }
 
+        public class EffectsGroupTop
+        {
+            [Data] public int Unk00 { get; set; }
+            [Data] public int Unk04 { get; set; }
+            [Data] public int UnkOff8 { get; set; }
+            [Data] public int UnkOffC { get; set; }
+        }
+
         public class EffectsGroup
         {
             public EffectsGroupHeader Header { get; set; }
+            public EffectsGroupTop Top { get; set; }
 
             public List<DpdEffect> Effects { get; set; }
         }
@@ -96,7 +105,11 @@ namespace OpenKh.Kh2
 
                 var offsetDpdEffectBase = stream.Position;
 
+                var top = BinaryMapping.ReadObject<EffectsGroupTop>(stream);
+
                 var pointBoundary = new PointBoundary();
+
+                pointBoundary.AddPoints(top.UnkOff8, top.UnkOffC);
 
                 var dpdEffects = new List<DpdEffect>();
 
@@ -145,6 +158,7 @@ namespace OpenKh.Kh2
                     new EffectsGroup
                     {
                         Header = effectsGroupHeader,
+                        Top = top,
                         Effects = dpdEffects,
                     }
                 );

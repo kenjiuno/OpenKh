@@ -1,154 +1,181 @@
-﻿using System.Collections.Generic;
+using OpenKh.Common;
+using OpenKh.Kh2.Utils;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
+using Xe.BinaryMapper;
 using Xe.IO;
 
 namespace OpenKh.Kh2
 {
-	public partial class Dpd
-	{
-		private const uint Version = 0x00000096U;
+    public partial class Dpd
+    {
+        private const uint Version = 0x00000096U;
 
-		public List<int> OffsetPdt { get; set; }
-		public List<int> OffsetTextures { get; set; }
-		public List<int> Offset3 { get; set; }
-		public List<int> Offset4 { get; set; }
-		public List<int> Offset5 { get; set; }
+        public List<Texture> Textures { get; set; }
+        public List<EffectsGroup> EffectsGroups { get; set; }
 
-		public Dpd(Stream stream)
-		{
-			if (!stream.CanRead || !stream.CanSeek)
-				throw new InvalidDataException($"Read or seek must be supported.");
+        public class EffectsGroupHeader
+        {
+            [Data(Count = 8)] public Vector4[] Coords { get; set; }
+            [Data] public Vector4 Position { get; set; }
+            [Data] public Vector4 Rotation { get; set; }
+            [Data] public Vector4 Scaling { get; set; }
+            [Data(Count = 96)] public byte[] Unk { get; set; }
+        }
 
-			var reader = new BinaryReader(stream);
-			if (stream.Length < 16L || reader.ReadUInt32() != Version)
-				throw new InvalidDataException("Invalid header");
+        public class EffectsGroup
+        {
+            public EffectsGroupHeader Header { get; set; }
 
-			// dpd_h_init_datainfo
-			OffsetPdt = ReadOffsetsList(reader);
-			OffsetTextures = ReadOffsetsList(reader);
-			Offset3 = ReadOffsetsList(reader);
-			Offset4 = ReadOffsetsList(reader);
-			Offset5 = ReadOffsetsList(reader);
+            public List<DpdEffect> Effects { get; set; }
+        }
 
-			// pppInitPdt
-			// OffsetPdt, Table 1
-			foreach (var offset in OffsetPdt)
-			{
-				// 9648E0
-				pppInitPdt(reader, offset, 0x354BF0);
-			}
+        public class DpdEffectHeader
+        {
+            [Data] public uint OffsetNext { get; set; }
+            [Data] public uint Unk04 { get; set; }
+            [Data] public uint Unk08 { get; set; }
+            [Data] public uint Unk0C { get; set; }
+            [Data] public uint Unk10 { get; set; }
+            [Data] public uint Unk14 { get; set; }
+            [Data] public uint Unk18 { get; set; }
+            [Data] public uint Unk1C { get; set; }
+            [Data] public uint Unk20 { get; set; }
+            [Data] public ushort Unk24 { get; set; }
+            [Data] public ushort CommandsCount { get; set; }
+        }
 
-			Textures = OffsetTextures
-				.Select(x => new Texture(new BinaryReader(new SubStream(reader.BaseStream, x, 0))));
-		}
+        public class DpdEffect
+        {
+            public DpdEffectHeader Header { get; set; }
 
-		public IEnumerable<Texture> Textures { get; }
+            public List<DpdEffectCommand> Commands { get; set; }
+        }
 
-		private void pppInitPdt(BinaryReader reader, int offset, int unk)
-		{
-			int a0, a1, a2, a3, a4, a5, a6, a7;
-			int t0, t1, t2, t3, t4, t5, t6, t7;
-			int v0, v1, v2, v3;
-			// a0 = offset
-			// a1 = unk
+        public class DpdEffectCommand
+        {
+            [Data] public EffectCommand Command { get; set; }
+            [Data] public ushort ParamLength { get; set; }
+            [Data] public ushort ParamCount { get; set; }
+            [Data] public uint OffsetPrimary { get; set; }
+            [Data] public uint OffsetSecondary { get; set; }
 
-			a1 = unk;
-			a0 = offset + 0x110;
-			t7 = ReadInt32(reader, a0 + 0x08);
-			t4 = a0 + 0x10;
-			t6 = ReadInt32(reader, a0 + 0x0C);
-			t0 = a0 + t7;
+            public byte[] Primary { get; set; }
+            public byte[] Secondary { get; set; }
+        }
 
-			a3 = a0 + t6;
-			t5 = ReadInt32(reader, t4);
-			a2 = ReadInt32(reader, t0);
-			v1 = ReadInt32(reader, a3);
-			t0 += 4;
+        public Dpd(Stream stream)
+        {
+            if (!stream.CanRead || !stream.CanSeek)
+            {
+                throw new InvalidDataException($"Read or seek must be supported.");
+            }
 
-			if (t5 != 0)
-			{
-				do
-				{
-					t7 = a0 + ReadInt32(reader, t4);
-					var count = ReadInt16(reader, t4 + 0x26);
-					// sw      $t7, 0($t4)
+            var offsetBase = stream.Position;
 
-					for (var i = 0; i < count; i++)
-					{
-						t5 = a1 + ReadInt32(reader, t4 + i * 0x10 + 0x28) * 0x48;
-						t6 = a0 + ReadInt32(reader, t4 + i * 0x10 + 0x30);
-						t7 = a0 + ReadInt32(reader, t4 + i * 0x10 + 0x34);
-						// sw      $t5, 0x28($t4)
-						// sw      $t6, 0x30($t4)
-						// sw      $t7, 0x34($t4)
-					}
+            var reader = new BinaryReader(stream);
+            if (stream.Length < 16L || reader.ReadUInt32() != Version)
+            {
+                throw new InvalidDataException("Invalid header");
+            }
 
-					t6 = a0 + ReadInt32(reader, t4);
-					t7 = ReadInt32(reader, t6);
-					t4 = t6;
-				} while (t7 != 0);
+            var offsetEffectsGroupList = ReadOffsetsList(reader);
+            var offsetTextures = ReadOffsetsList(reader);
+            var offsetTable3 = ReadOffsetsList(reader);
+            var offsetTable4 = ReadOffsetsList(reader);
+            var offsetTable5 = ReadOffsetsList(reader);
 
-				// sw      $zero, 0($t4)
-				for (var i = 0; i < a2; i++)
-				{
-					t7 = a1 + ReadInt32(reader, t0 + i * 4) * 0x48;
-					// sw      $t7, 0($t5)
-				}
+            var effectsGroups = new List<EffectsGroup>();
 
-				t5 = a3;
-				t4 = v1;
+            foreach (var offsetEffectsGroup in offsetEffectsGroupList)
+            {
+                stream.Position = offsetBase + offsetEffectsGroup;
+                var effectsGroupHeader = BinaryMapping.ReadObject<EffectsGroupHeader>(stream);
 
-				do
-				{
-					t7 = ReadInt32(reader, t5);
-					t4--;
-					t7 += a0;
-					// sw      $t7, 0($t5)
-					t5 += 4;
-				} while (t4 != 0);
-			}
-		}
+                var offsetDpdEffectBase = stream.Position;
 
+                var pointBoundary = new PointBoundary();
 
-		private List<int> ReadOffsetsList(BinaryReader reader)
-		{
-			int count = reader.ReadInt32();
-			var list = new List<int>(count);
+                var dpdEffects = new List<DpdEffect>();
 
-			for (int i = 0; i < count; i++)
-			{
-				list.Add(reader.ReadInt32());
-			}
+                var nextOffset = 16U;
+                while (nextOffset != 0)
+                {
+                    stream.Position = offsetDpdEffectBase + nextOffset;
+                    var dpdEffectHeader = BinaryMapping.ReadObject<DpdEffectHeader>(stream);
 
-			return list;
-		}
+                    var dpdEffectCommands = Enumerable.Range(0, dpdEffectHeader.CommandsCount)
+                        .Select(_ => BinaryMapping.ReadObject<DpdEffectCommand>(stream))
+                        .ToList();
 
-		private void WriteOffsetsList(BinaryWriter writer, List<int> list)
-		{
-			writer.Write(list.Count);
-			for (int i = 0; i < list.Count; i++)
-			{
-				writer.Write(list[i]);
-			}
-		}
+                    dpdEffectCommands.ForEach(
+                        it => pointBoundary.AddPoints((int)it.OffsetPrimary, (int)it.OffsetSecondary)
+                    );
 
-		public int ReadInt16(BinaryReader reader, int offset)
-		{
-			var old = reader.BaseStream.Position;
-			reader.BaseStream.Position = offset;
-			var data = reader.ReadInt16();
-			reader.BaseStream.Position = old;
-			return data;
-		}
+                    dpdEffects.Add(
+                        new DpdEffect
+                        {
+                            Header = dpdEffectHeader,
+                            Commands = dpdEffectCommands,
+                        }
+                    );
 
-		public int ReadInt32(BinaryReader reader, int offset)
-		{
-			var old = reader.BaseStream.Position;
-			reader.BaseStream.Position = offset;
-			var data = reader.ReadInt32();
-			reader.BaseStream.Position = old;
-			return data;
-		}
-	}
+                    nextOffset = dpdEffectHeader.OffsetNext;
+                }
+
+                foreach (var dpdEffect in dpdEffects)
+                {
+                    foreach (var command in dpdEffect.Commands)
+                    {
+                        stream.Position = offsetDpdEffectBase + command.OffsetPrimary;
+
+                        command.Primary = stream.ReadBytes(
+                            pointBoundary.GetLengthFromPoint((int)command.OffsetPrimary)
+                        );
+
+                        command.Secondary = stream.ReadBytes(
+                            pointBoundary.GetLengthFromPoint((int)command.OffsetSecondary)
+                        );
+                    }
+                }
+
+                effectsGroups.Add(
+                    new EffectsGroup
+                    {
+                        Header = effectsGroupHeader,
+                        Effects = dpdEffects,
+                    }
+                );
+            }
+
+            Textures = offsetTextures
+                .Select(offset => Texture.Read(stream.SetPosition(offsetBase + offset)))
+                .ToList();
+        }
+
+        private List<int> ReadOffsetsList(BinaryReader reader)
+        {
+            int count = reader.ReadInt32();
+            var list = new List<int>(count);
+
+            for (int i = 0; i < count; i++)
+            {
+                list.Add(reader.ReadInt32());
+            }
+
+            return list;
+        }
+
+        private void WriteOffsetsList(BinaryWriter writer, List<int> list)
+        {
+            writer.Write(list.Count);
+            for (int i = 0; i < list.Count; i++)
+            {
+                writer.Write(list[i]);
+            }
+        }
+
+    }
 }

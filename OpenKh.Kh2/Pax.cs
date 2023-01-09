@@ -81,7 +81,7 @@ namespace OpenKh.Kh2
                 .ToList();
 
             stream.Position = offsetBase + header.OffsetName;
-            var name = stream.ReadString(128, Encoding.Latin1);
+            var name = stream.ReadString(128, Encoding.GetEncoding("latin1"));
 
             stream.Position = offsetBase + header.OffsetDpx;
             var dpx = Dpx.Read(stream);
@@ -90,44 +90,41 @@ namespace OpenKh.Kh2
             {
                 Entries = entries,
                 Name = name,
+                Dpx = dpx,
             };
         }
 
-        private void ReadDpx(BinaryReader reader)
-        {
-        }
+        //public void SaveChanges(Stream stream)
+        //{
+        //    SaveChanges(new BinaryWriter(stream));
+        //}
 
-        public void SaveChanges(Stream stream)
-        {
-            SaveChanges(new BinaryWriter(stream));
-        }
+        //public void SaveChanges(BinaryWriter writer)
+        //{
+        //    var offsetBase = writer.BaseStream.Position;
 
-        public void SaveChanges(BinaryWriter writer)
-        {
-            var offsetBase = writer.BaseStream.Position;
+        //    writer.BaseStream.Position += 0x10;
+        //    SaveEntries(writer);
 
-            writer.BaseStream.Position += 0x10;
-            SaveEntries(writer);
+        //    int offsetName = (int)(writer.BaseStream.Position - offsetBase);
+        //    SaveName(writer);
 
-            int offsetName = (int)(writer.BaseStream.Position - offsetBase);
-            SaveName(writer);
+        //    int offsetDpx = (int)(writer.BaseStream.Position - offsetBase);
+        //    //Dpx.SaveChanges(writer);
 
-            int offsetDpx = (int)(writer.BaseStream.Position - offsetBase);
-            //Dpx.SaveChanges(writer);
+        //    writer.BaseStream.Position = offsetBase;
+        //    writer.Write(MagicCode);
+        //    writer.Write(offsetName);
+        //    writer.Write(Entries.Count);
+        //    writer.Write(offsetDpx);
+        //}
 
-            writer.BaseStream.Position = offsetBase;
-            writer.Write(MagicCode);
-            writer.Write(offsetName);
-            writer.Write(Entries.Count);
-            writer.Write(offsetDpx);
-        }
-
-        public void SaveEntries(BinaryWriter writer)
-        {
-            foreach (var entry in Entries)
-            {
-                entry.Save(writer);
-            }
-        }
+        //public void SaveEntries(BinaryWriter writer)
+        //{
+        //    foreach (var entry in Entries)
+        //    {
+        //        entry.Save(writer);
+        //    }
+        //}
     }
 }

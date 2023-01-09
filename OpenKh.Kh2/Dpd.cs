@@ -16,6 +16,8 @@ namespace OpenKh.Kh2
         public List<Texture> Textures { get; set; }
         public List<EffectsGroup> EffectsGroups { get; set; }
 
+        public override string ToString() => $"{EffectsGroups.Count} EffectsGroups, {Textures.Count} Textures";
+
         public class EffectsGroupHeader
         {
             [Data(Count = 8)] public Vector4[] Coords { get; set; }
@@ -73,9 +75,16 @@ namespace OpenKh.Kh2
 
             public byte[] Primary { get; set; }
             public byte[] Secondary { get; set; }
+
+            public override string ToString() => $"{Command} ({ParamLength} x {ParamCount}) Primary:{Primary?.Length ?? -1} Secondary:{Secondary?.Length ?? -1}";
         }
 
-        public Dpd(Stream stream)
+        private static readonly IBinaryMapping _mapping =
+           MappingConfiguration.DefaultConfiguration()
+               .ForTypeVector4()
+               .Build();
+
+        public static Dpd Read(Stream stream)
         {
             if (!stream.CanRead || !stream.CanSeek)
             {
@@ -101,7 +110,7 @@ namespace OpenKh.Kh2
             foreach (var offsetEffectsGroup in offsetEffectsGroupList)
             {
                 stream.Position = offsetBase + offsetEffectsGroup;
-                var effectsGroupHeader = BinaryMapping.ReadObject<EffectsGroupHeader>(stream);
+                var effectsGroupHeader = _mapping.ReadObject<EffectsGroupHeader>(stream);
 
                 var offsetDpdEffectBase = stream.Position;
 
@@ -164,12 +173,18 @@ namespace OpenKh.Kh2
                 );
             }
 
-            Textures = offsetTextures
+            var textures = offsetTextures
                 .Select(offset => Texture.Read(stream.SetPosition(offsetBase + offset)))
                 .ToList();
+
+            return new Dpd
+            {
+                EffectsGroups = effectsGroups,
+                Textures = textures,
+            };
         }
 
-        private List<int> ReadOffsetsList(BinaryReader reader)
+        private static List<int> ReadOffsetsList(BinaryReader reader)
         {
             int count = reader.ReadInt32();
             var list = new List<int>(count);

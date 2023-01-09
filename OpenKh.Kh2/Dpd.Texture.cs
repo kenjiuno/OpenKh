@@ -25,6 +25,8 @@ namespace OpenKh.Kh2
             [Data] public int Unk18 { get; set; }
             [Data] public int Unk1c { get; set; }
 
+            public override string ToString() => $"{Width} x {Height} ({(Imaging.Tm2.GsPSM)Format})";
+
             public Size Size => new Size(Width, Height);
 
             public byte[] Data { get; set; }

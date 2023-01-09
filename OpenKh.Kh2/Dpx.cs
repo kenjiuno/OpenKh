@@ -80,7 +80,7 @@ namespace OpenKh.Kh2
                     {
                         stream.Position = offsetBase + group.Key;
 
-                        var dpd = new Dpd(stream);
+                        var dpd = Dpd.Read(stream);
                         var entryIndex = dpdList.Count;
                         dpdList.Add(dpd);
 

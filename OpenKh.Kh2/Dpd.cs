@@ -107,6 +107,9 @@ namespace OpenKh.Kh2
 
             var effectsGroups = new List<EffectsGroup>();
 
+            var deferredReads = new List<(DpdEffectCommand, long)>();
+            var pointBoundary = new PointBoundary();
+
             foreach (var offsetEffectsGroup in offsetEffectsGroupList)
             {
                 stream.Position = offsetBase + offsetEffectsGroup;
@@ -116,9 +119,10 @@ namespace OpenKh.Kh2
 
                 var top = BinaryMapping.ReadObject<EffectsGroupTop>(stream);
 
-                var pointBoundary = new PointBoundary();
-
-                pointBoundary.AddPoints(top.UnkOff8, top.UnkOffC);
+                pointBoundary.AddPoints(
+                    (int)(offsetDpdEffectBase + top.UnkOff8), 
+                    (int)(offsetDpdEffectBase + top.UnkOffC)
+                );
 
                 var dpdEffects = new List<DpdEffect>();
 
@@ -132,9 +136,19 @@ namespace OpenKh.Kh2
                         .Select(_ => BinaryMapping.ReadObject<DpdEffectCommand>(stream))
                         .ToList();
 
+                    pointBoundary.AddPoints((int)(offsetDpdEffectBase + nextOffset));
+
                     dpdEffectCommands.ForEach(
-                        it => pointBoundary.AddPoints((int)it.OffsetPrimary, (int)it.OffsetSecondary)
+                        it => pointBoundary.AddPoints(
+                            (int)(offsetDpdEffectBase + it.OffsetPrimary),
+                            (int)(offsetDpdEffectBase + it.OffsetSecondary)
+                        )
                     );
+
+                    foreach (var command in dpdEffectCommands)
+                    {
+                        deferredReads.Add((command, offsetDpdEffectBase + command.OffsetPrimary));
+                    }
 
                     dpdEffects.Add(
                         new DpdEffect
@@ -147,22 +161,6 @@ namespace OpenKh.Kh2
                     nextOffset = dpdEffectHeader.OffsetNext;
                 }
 
-                foreach (var dpdEffect in dpdEffects)
-                {
-                    foreach (var command in dpdEffect.Commands)
-                    {
-                        stream.Position = offsetDpdEffectBase + command.OffsetPrimary;
-
-                        command.Primary = stream.ReadBytes(
-                            pointBoundary.GetLengthFromPoint((int)command.OffsetPrimary)
-                        );
-
-                        command.Secondary = stream.ReadBytes(
-                            pointBoundary.GetLengthFromPoint((int)command.OffsetSecondary)
-                        );
-                    }
-                }
-
                 effectsGroups.Add(
                     new EffectsGroup
                     {
@@ -170,6 +168,21 @@ namespace OpenKh.Kh2
                         Top = top,
                         Effects = dpdEffects,
                     }
+                );
+            }
+
+            foreach (var defer in deferredReads)
+            {
+                stream.Position = defer.Item2;
+
+                var command = defer.Item1;
+
+                command.Primary = stream.ReadBytes(
+                    pointBoundary.GetLengthFromPoint((int)command.OffsetPrimary)
+                );
+
+                command.Secondary = stream.ReadBytes(
+                    pointBoundary.GetLengthFromPoint((int)command.OffsetSecondary)
                 );
             }
 

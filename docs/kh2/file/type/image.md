@@ -53,4 +53,11 @@ Contains multiple [IMGDs](#imgd) prepended by a [specific header](#imz-header). 
 | 04 | uint32_t | Always `256`
 | 08 | uint32_t | Header length. Always `16`
 | 0c | uint32_t | [IMGD](#imgd) count
+
+### Image formats
+
+| ID   | Format
+|------|--------
+| 0x00 | 32 bits per pixel
+| 0x13 | 8 bits per pixel
 | 0x14 | 4 bits per pixel

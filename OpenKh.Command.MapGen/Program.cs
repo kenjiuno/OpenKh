@@ -7,6 +7,8 @@ using OpenKh.Common.Exceptions;
 using OpenKh.Command.MapGen.Utils;
 using NLog;
 
+test build error
+
 namespace OpenKh.Command.MapGen
 {
     [Command("OpenKh.Command.MapGen")]

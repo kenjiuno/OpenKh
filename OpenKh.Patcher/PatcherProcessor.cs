@@ -1,16 +1,17 @@
+using OpenKh.Bbs;
+using OpenKh.Command.Bdxio.Models;
+using OpenKh.Command.Bdxio.Utils;
 using OpenKh.Common;
 using OpenKh.Imaging;
 using OpenKh.Kh2;
 using OpenKh.Kh2.Messages;
-using OpenKh.Command.Bdxio.Models;
-using OpenKh.Command.Bdxio.Utils;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using YamlDotNet.Serialization;
-using OpenKh.Bbs;
+using static OpenKh.Kh2.SystemData.Shop;
 
 namespace OpenKh.Patcher
 {
@@ -94,10 +95,12 @@ namespace OpenKh.Patcher
             IDictionary<string, string> packageMap = null,
             string LaunchGame = null,
             string Language = "en",
-            bool Tests = false
+            bool Tests = false,
+            Dictionary<string, bool> collectionOptionalEnabledMods = null
         )
         {
-
+            if (collectionOptionalEnabledMods == null)
+                collectionOptionalEnabledMods = new Dictionary<string, bool> { };
             var context = new Context(metadata, originalAssets, modBasePath, outputDir);
             try
             {
@@ -106,11 +109,19 @@ namespace OpenKh.Patcher
                     throw new Exception("No assets found.");
                 if (metadata.Game != null && GamesList.Contains(metadata.Game.ToLower()) && metadata.Game.ToLower() != LaunchGame.ToLower())
                     return;
+                if (metadata.IsCollection && !metadata.CollectionGames.Contains(LaunchGame))
+                    return;
 
                 var exclusiveLock = new object();
-
                 metadata.Assets.AsParallel().ForAll(assetFile =>
                 {
+                    if (assetFile.Game != null && assetFile.Game != LaunchGame)
+                        return;
+                    if (assetFile.CollectionOptional == true)
+                        if (!collectionOptionalEnabledMods.ContainsKey(assetFile.Name))
+                            return;
+                        else if (!collectionOptionalEnabledMods[assetFile.Name])
+                            return;
                     var names = new List<string>();
                     names.Add(assetFile.Name);
                     if (assetFile.Multi != null)
@@ -983,6 +994,120 @@ namespace OpenKh.Patcher
                         }
 
                         Kh2.Battle.Enmp.Write(stream.SetPosition(0), enmpList);
+                        break;
+
+                    case "shop":
+                        var shop = Kh2.SystemData.Shop.Read(stream);
+                        var moddedShop = deserializer.Deserialize<Kh2.SystemData.Shop.ShopHelper>(sourceText);
+                        ushort inventoriesBaseOffset = (ushort)(Kh2.SystemData.Shop.HeaderSize + shop.ShopEntries.Count * Kh2.SystemData.Shop.ShopEntrySize);
+                        ushort productsBaseOffset = (ushort)(inventoriesBaseOffset + shop.InventoryEntries.Count * Kh2.SystemData.Shop.InventoryEntrySize);
+                        List<Kh2.SystemData.Shop.ShopEntryHelper> moddedShopEntryHelpers = shop.ShopEntries.Select(x => x.ToShopEntryHelper(inventoriesBaseOffset)).ToList();
+                        if (moddedShop?.ShopEntryHelpers != null)
+                        {
+                            foreach (var shopEntryHelper in moddedShop.ShopEntryHelpers)
+                            {
+                                int entryIndex = moddedShopEntryHelpers.FindIndex(x => x.ShopID == shopEntryHelper.ShopID);
+                                if (entryIndex < 0)
+                                {
+                                    moddedShopEntryHelpers.Add(shopEntryHelper);
+                                }
+                                else
+                                {
+                                    moddedShopEntryHelpers[entryIndex] = shopEntryHelper;
+                                }
+                            }
+                        }
+                        inventoriesBaseOffset = (ushort)(Kh2.SystemData.Shop.HeaderSize + moddedShopEntryHelpers.Count * Kh2.SystemData.Shop.ShopEntrySize);
+                        shop.ShopEntries = moddedShopEntryHelpers.Select(x => x.ToShopEntry(inventoriesBaseOffset)).ToList();
+                        List<Kh2.SystemData.Shop.InventoryEntryHelper> moddedInventoryEntryHelpers = shop.InventoryEntries.Select((x, index) => 
+                            x.ToInventoryEntryHelper(index, productsBaseOffset)
+                        ).ToList();
+                        if (moddedShop?.InventoryEntryHelpers != null)
+                        {
+                            foreach (var inventoryEntryHelper in moddedShop.InventoryEntryHelpers)
+                            {
+                                int invIndex = inventoryEntryHelper.InventoryIndex;
+                                if (invIndex < 0)
+                                    throw new InvalidDataException($"Shop listpatch: InventoryIndex {invIndex} is an invalid index.");
+                                if (invIndex >= moddedInventoryEntryHelpers.Count)
+                                {
+                                    int dummiesToAdd = invIndex - moddedInventoryEntryHelpers.Count;
+                                    for (int i = 0; i < dummiesToAdd; i++)
+                                    {
+                                        moddedInventoryEntryHelpers.Add(new Kh2.SystemData.Shop.InventoryEntryHelper {
+                                            InventoryIndex = moddedInventoryEntryHelpers.Count + i,
+                                            UnlockEventID = 0,
+                                            ProductCount = 0,
+                                            ProductStartIndex = 0
+                                        });
+                                    }
+                                    moddedInventoryEntryHelpers.Add(inventoryEntryHelper);
+                                }
+                                else
+                                {
+                                    moddedInventoryEntryHelpers[invIndex] = inventoryEntryHelper;
+                                }
+                            }
+                        }
+                        productsBaseOffset = (ushort)(inventoriesBaseOffset + moddedInventoryEntryHelpers.Count * Kh2.SystemData.Shop.InventoryEntrySize);
+                        shop.InventoryEntries = moddedInventoryEntryHelpers.Select(x => x.ToInventoryEntry(productsBaseOffset)).ToList();
+                        List<Kh2.SystemData.Shop.ProductEntryHelper> moddedProductEntryHelpers = shop.ProductEntries.Select((x, index) => x.ToProductEntryHelper(index)).ToList();
+                        if (moddedShop?.ProductEntryHelpers != null)
+                        {
+                            foreach (var productEntryHelper in moddedShop.ProductEntryHelpers)
+                            {
+                                int prodIndex = productEntryHelper.ProductIndex;
+                                if (prodIndex < 0)
+                                    throw new InvalidDataException($"Shop listpatch: ProductIndex {prodIndex} is an invalid index.");
+                                if (prodIndex >= moddedProductEntryHelpers.Count)
+                                {
+                                    int dummiesToAdd = prodIndex - moddedProductEntryHelpers.Count;
+                                    for (int i = 0; i < dummiesToAdd; i++)
+                                    {
+                                        moddedProductEntryHelpers.Add(new Kh2.SystemData.Shop.ProductEntryHelper
+                                        {
+                                            ProductIndex = moddedProductEntryHelpers.Count + i,
+                                            ItemID = 0
+                                        });
+                                    }
+                                    moddedProductEntryHelpers.Add(productEntryHelper);
+                                }
+                                else
+                                {
+                                    moddedProductEntryHelpers[prodIndex] = productEntryHelper;
+                                }
+                            }
+                        }
+                        shop.ProductEntries = moddedProductEntryHelpers.Select(x => x.ToProductEntry()).ToList();
+                        List<Kh2.SystemData.Shop.ProductEntryHelper> moddedValidProductEntryHelpers = shop.ValidProductEntries.Select((x, index) => x.ToProductEntryHelper(index)).ToList();
+                        if (moddedShop?.ValidProductEntryHelpers != null)
+                        {
+                            foreach (var productEntryHelper in moddedShop.ValidProductEntryHelpers)
+                            {
+                                int prodIndex = productEntryHelper.ProductIndex;
+                                if (prodIndex < 0)
+                                    throw new InvalidDataException($"Shop listpatch: ValidProductIndex {prodIndex} is an invalid index.");
+                                if (prodIndex >= moddedValidProductEntryHelpers.Count)
+                                {
+                                    int dummiesToAdd = prodIndex - moddedValidProductEntryHelpers.Count;
+                                    for (int i = 0; i < dummiesToAdd; i++)
+                                    {
+                                        moddedValidProductEntryHelpers.Add(new Kh2.SystemData.Shop.ProductEntryHelper
+                                        {
+                                            ProductIndex = moddedValidProductEntryHelpers.Count + i,
+                                            ItemID = 0
+                                        });
+                                    }
+                                    moddedValidProductEntryHelpers.Add(productEntryHelper);
+                                }
+                                else
+                                {
+                                    moddedValidProductEntryHelpers[prodIndex] = productEntryHelper;
+                                }
+                            }
+                        }
+                        shop.ValidProductEntries = moddedValidProductEntryHelpers.Select(x => x.ToProductEntry()).ToList();
+                        Kh2.SystemData.Shop.Write(stream.SetPosition(0), shop);
                         break;
 
                     case "sklt":

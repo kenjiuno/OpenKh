@@ -19,6 +19,7 @@ This document will focus on teaching you how to create mods using the OpenKH Mod
       * [trsr](#trsr-source-example)
       * [cmd](#cmd-source-example)
       * [item](#item-source-example)
+      * [shop](#shop-source-example)
       * [sklt](#sklt-source-example)
       * [arif](#arif-source-example)
       * [memt](#memt-source-example)
@@ -62,6 +63,17 @@ The mod.yml file is a YAML format specification for your mod. It will contain th
 * `logo` - The path to the icon.png
 * `assets` - A list of assets that will be modified when the mod runs. 
   * See [`asset types`](#asset-types), for details on creating an asset. Some asset types will work on any game, while others are game specific.
+
+Additional optional fields for the mod.yml include:
+* `game` - If this mod is for a single specific game you can specify it here to ensure safe install
+* `speciications` -
+* `dependencies` -
+* `isCollection` - Specifies that this is a collection of mods, potentially cross game
+* `collectionGames` - A list of the short hand titles of the games the mod collection covers (accepted values: `kh1`, `kh2`, `bbs`, `Recom`, `kh3d`)
+
+Additional optional fields for Assets:
+* `game` - The game this specific asset belongs to when part of a mod collection
+* `collectionOptional` - Marks the asset as optionally installable, and sets it to show in the collecion settings pane
 
 While you are developing a mod you can create a folder inside the `mods` directory of the mod manager release. I.e.:
 
@@ -299,6 +311,7 @@ Asset Example
  * `trsr`
  * `cmd`
  * `item`
+ * `shop`
  * `sklt`
  * `arif`
  * `memt`
@@ -405,6 +418,38 @@ Items:
   Icon1: 9
   Icon2: 0
   InsertBefore: 7 #This will insert the item ID before the item ID you specify here. Defaults to 0, which will append to the item list instead. You can alternatively use InsertAfter. 
+```
+### `shop` Source Example
+```
+ShopEntryHelpers:
+- CommandArgument: 104
+  UnlockMenuFlag: 42
+  NameID: 35513
+  ShopKeeperEntityID: 1865
+  PosX: 134
+  PosY: 150
+  PosZ: -591
+  ExtraInventoryBitMask: 130
+  SoundID: 1
+  InventoryCount: 1
+  ShopID: 0
+  Unk19: 2
+  InventoryStartIndex: 0
+InventoryEntryHelpers:
+- InventoryIndex: 0
+  UnlockEventID: 65535
+  ProductCount: 2
+  ProductStartIndex: 0
+ProductEntryHelpers:
+- ProductIndex: 0
+  ItemID: 67
+- ProductIndex: 1
+  ItemID: 296
+ValidProductEntryHelpers:
+- ProductIndex: 0
+  ItemID: 67
+- ProductIndex: 1
+  ItemID: 296
 ```
 ### `sklt` Source Example
 ```
@@ -998,7 +1043,7 @@ To start, here are the steps:
 
 ## Publishing a Mod on GitHub
 
-Mods should be published to a public GitHUb repository, so that users can install the mod just by providing the repository name.
+Mods should be published to a public GitHub repository, so that users can install the mod just by providing the repository name.
 
 It is recommended to apply the following tags to the repository, in order to make it easily found by searching GitHub for mods manager mods:
 

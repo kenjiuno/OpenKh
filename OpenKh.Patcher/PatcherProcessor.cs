@@ -1,16 +1,17 @@
+using OpenKh.Bbs;
+using OpenKh.Command.Bdxio.Models;
+using OpenKh.Command.Bdxio.Utils;
 using OpenKh.Common;
 using OpenKh.Imaging;
 using OpenKh.Kh2;
 using OpenKh.Kh2.Messages;
-using OpenKh.Command.Bdxio.Models;
-using OpenKh.Command.Bdxio.Utils;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using YamlDotNet.Serialization;
-using OpenKh.Bbs;
+using static OpenKh.Kh2.SystemData.Shop;
 
 namespace OpenKh.Patcher
 {
@@ -79,9 +80,27 @@ namespace OpenKh.Patcher
             "Recom",
         };
 
-        public void Patch(string originalAssets, string outputDir, Metadata metadata, string modBasePath, int platform = 1, bool fastMode = false, IDictionary<string, string> packageMap = null, string LaunchGame = null, string Language = "en", bool Tests = false)
+        /// <param name="platform">(GameEdition) 0=OpenKH, 1=PCSX2-EX, 2=PC</param>
+        /// <param name="fastMode">If true, always the first package file (kh1_first, bbs_first, kh2_first or such) is selected.</param>
+        /// <param name="Tests">If true, always invoke context.CopyOriginalFile</param>
+        /// <param name="LaunchGame">(GameId) "kh1", "kh2", "bbs", "Recom", "kh3d"</param>
+        /// <param name="Language">en, jp</param>
+        public void Patch(
+            string originalAssets,
+            string outputDir,
+            Metadata metadata,
+            string modBasePath,
+            int platform = 1,
+            bool fastMode = false,
+            IDictionary<string, string> packageMap = null,
+            string LaunchGame = null,
+            string Language = "en",
+            bool Tests = false,
+            Dictionary<string, bool> collectionOptionalEnabledMods = null
+        )
         {
-
+            if (collectionOptionalEnabledMods == null)
+                collectionOptionalEnabledMods = new Dictionary<string, bool> { };
             var context = new Context(metadata, originalAssets, modBasePath, outputDir);
             try
             {
@@ -90,9 +109,19 @@ namespace OpenKh.Patcher
                     throw new Exception("No assets found.");
                 if (metadata.Game != null && GamesList.Contains(metadata.Game.ToLower()) && metadata.Game.ToLower() != LaunchGame.ToLower())
                     return;
+                if (metadata.IsCollection && !metadata.CollectionGames.Contains(LaunchGame))
+                    return;
 
+                var exclusiveLock = new object();
                 metadata.Assets.AsParallel().ForAll(assetFile =>
                 {
+                    if (assetFile.Game != null && assetFile.Game != LaunchGame)
+                        return;
+                    if (assetFile.CollectionOptional == true)
+                        if (!collectionOptionalEnabledMods.ContainsKey(assetFile.Name))
+                            return;
+                        else if (!collectionOptionalEnabledMods[assetFile.Name])
+                            return;
                     var names = new List<string>();
                     names.Add(assetFile.Name);
                     if (assetFile.Multi != null)
@@ -175,7 +204,10 @@ namespace OpenKh.Patcher
                         if (packageMap != null && packageMapLocation.Length > 0)
                         {
                             // Protect against multiple mods having the same file where one uses forward slash and one uses backslash
-                            packageMap[name.Replace("\\", "/")] = packageMapLocation;
+                            lock (exclusiveLock)
+                            {
+                                packageMap[name.Replace("\\", "/")] = packageMapLocation;
+                            }
                         }
 
                         context.EnsureDirectoryExists(dstFile);
@@ -198,10 +230,34 @@ namespace OpenKh.Patcher
                             //If copying a file from the mod (NOT Type: internal) make sure it exists (doesnt check if the location its going normally exists) OR
                             //If copying a file from the users extraction (Type: internal) make sure it exists (doesnt check if the location its going normally exists) OR
                             //Ignore if its from a test
-                            if ((assetFile.Method != "copy" && assetFile.Method != "imd" && (File.Exists(context.GetOriginalAssetPath(assetFile.Name)) || multi)) ||
-                            ((assetFile.Method == "copy" || assetFile.Method == "imd") && assetFile.Source[0].Type != "internal" && File.Exists(context.GetSourceModAssetPath(assetFile.Source[0].Name))) ||
-                            ((assetFile.Method == "copy" || assetFile.Method == "imd") && assetFile.Source[0].Type == "internal" && (File.Exists(context.GetOriginalAssetPath(assetFile.Source[0].Name)) || multi)) ||
-                            Tests)
+
+                            var needToCopyOriginalFile =
+                                (false
+                                || (true
+                                    && assetFile.Method != "copy"
+                                    && assetFile.Method != "imd"
+                                    && (false
+                                        || File.Exists(context.GetOriginalAssetPath(assetFile.Name))
+                                        || multi
+                                    )
+                                )
+                                || (true
+                                    && (assetFile.Method == "copy" || assetFile.Method == "imd")
+                                    && assetFile.Source[0].Type != "internal"
+                                    && File.Exists(context.GetSourceModAssetPath(assetFile.Source[0].Name))
+                                )
+                                || (true
+                                    && (assetFile.Method == "copy" || assetFile.Method == "imd")
+                                    && assetFile.Source[0].Type == "internal"
+                                    && (false
+                                        || File.Exists(context.GetOriginalAssetPath(assetFile.Source[0].Name))
+                                        || multi
+                                    )
+                                )
+                                || Tests
+                                );
+
+                            if (needToCopyOriginalFile)
                             {
                                 context.CopyOriginalFile(name, dstFile);
 
@@ -213,32 +269,10 @@ namespace OpenKh.Patcher
                             }
                             else
                             {
+                                // The following codes are for validation purposes only.
+
                                 List<string> globalFilePaths = new List<string> { ".a.fr", ".a.gr", ".a.it", ".a.sp", ".a.us", "/fr/", "/gr/", "/it/", "/sp/", "/us/" };
                                 if (assetFile.Method != "copy" && assetFile.Method != "imd")
-                                {
-                                    if (platform == 2)
-                                    {
-                                        if (Language != "jp")
-                                        {
-                                            if (!context.GetOriginalAssetPath(name).Contains(".a.fm") && !context.GetOriginalAssetPath(name).Contains("/jp/"))
-                                            {
-                                            Log.Warn("File not found: " + context.GetOriginalAssetPath(name) + " Skipping. \nPlease check your game extraction.");
-                                            }
-                                        }
-                                        else
-                                        {
-                                            if (!globalFilePaths.Any(x=>context.GetOriginalAssetPath(name).Contains(x)))
-                                            {
-                                                Log.Warn("File not found: " + context.GetOriginalAssetPath(name) + " Skipping. \nPlease check your game extraction.");
-                                            }
-                                        }
-                                    }
-                                    else
-                                    {
-                                        Log.Warn("File not found: " + context.GetOriginalAssetPath(name) + " Skipping. \nPlease check your game extraction.");
-                                    }
-                                }
-                                else if (assetFile.Source[0].Type == "internal")
                                 {
                                     if (platform == 2)
                                     {
@@ -260,6 +294,30 @@ namespace OpenKh.Patcher
                                     else
                                     {
                                         Log.Warn("File not found: " + context.GetOriginalAssetPath(name) + " Skipping. \nPlease check your game extraction.");
+                                    }
+                                }
+                                else if (assetFile.Source[0].Type == "internal")
+                                {
+                                    if (platform == 2)
+                                    {
+                                        if (Language != "jp")
+                                        {
+                                            if (!context.GetOriginalAssetPath(assetFile.Source[0].Name).Contains(".a.fm") && !context.GetOriginalAssetPath(assetFile.Source[0].Name).Contains("/jp/") && (assetFile.Multi == null || assetFile.Name == name))
+                                            {
+                                                Log.Warn("File not found: " + context.GetOriginalAssetPath(assetFile.Source[0].Name) + " Skipping. \nPlease check your game extraction.");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            if (!globalFilePaths.Any(x => context.GetOriginalAssetPath(assetFile.Source[0].Name).Contains(x)) && (assetFile.Multi == null || assetFile.Name == name))
+                                            {
+                                                Log.Warn("File not found: " + context.GetOriginalAssetPath(assetFile.Source[0].Name) + " Skipping. \nPlease check your game extraction.");
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Log.Warn("File not found: " + context.GetOriginalAssetPath(assetFile.Source[0].Name) + " Skipping. \nPlease check your game extraction.");
                                     }
                                 }
                                 else
@@ -642,6 +700,7 @@ namespace OpenKh.Patcher
                     case "item":
                         var itemList = Kh2.SystemData.Item.Read(stream);
                         var moddedItem = deserializer.Deserialize<Kh2.SystemData.Item>(sourceText);
+
                         if (moddedItem.Items != null)
                         {
                             foreach (var item in moddedItem.Items)
@@ -653,10 +712,31 @@ namespace OpenKh.Patcher
                                 }
                                 else
                                 {
+                                    if (item.InsertBefore != 0) // Prioritize InsertBefore
+                                    {
+                                        var index = itemList.Items.FindIndex(x => x.Id == item.InsertBefore);
+                                        if (index >= 0)
+                                        {
+                                            itemList.Items.Insert(index, item);
+                                            continue;
+                                        }
+                                    }
+                                    else if (item.InsertAfter != 0) // If InsertBefore not set, check InsertAfter
+                                    {
+                                        var index = itemList.Items.FindIndex(x => x.Id == item.InsertAfter);
+                                        if (index >= 0)
+                                        {
+                                            itemList.Items.Insert(index + 1, item);
+                                            continue;
+                                        }
+                                    }
+
+                                    // Default case: append
                                     itemList.Items.Add(item);
                                 }
                             }
                         }
+
                         if (moddedItem.Stats != null)
                         {
                             foreach (var item in moddedItem.Stats)
@@ -672,6 +752,7 @@ namespace OpenKh.Patcher
                                 }
                             }
                         }
+
                         itemList.Write(stream.SetPosition(0));
                         break;
 
@@ -792,18 +873,16 @@ namespace OpenKh.Patcher
                     case "objentry":
                         var objEntryList = Kh2.Objentry.Read(stream).ToDictionary(x => x.ObjectId, x => x);
                         var moddedObjEntry = deserializer.Deserialize<Dictionary<uint, Kh2.Objentry>>(sourceText);
+
                         foreach (var objEntry in moddedObjEntry)
                         {
-                            if (objEntryList.ContainsKey(objEntry.Key))
-                            {
-                                objEntryList[objEntry.Key] = objEntry.Value;
-                            }
-                            else
-                            {
-                                objEntryList.Add(objEntry.Key, objEntry.Value);
-                            }
+                            objEntryList[objEntry.Key] = objEntry.Value; // Add or overwrite
                         }
-                        Kh2.Objentry.Write(stream.SetPosition(0), objEntryList.Values);
+
+                        // Sort final list by ObjId before writing
+                        var sortedEntries = objEntryList.Values.OrderBy(x => x.ObjectId).ToList();
+
+                        Kh2.Objentry.Write(stream.SetPosition(0), sortedEntries);
                         break;
 
                     case "plrp":
@@ -915,6 +994,120 @@ namespace OpenKh.Patcher
                         }
 
                         Kh2.Battle.Enmp.Write(stream.SetPosition(0), enmpList);
+                        break;
+
+                    case "shop":
+                        var shop = Kh2.SystemData.Shop.Read(stream);
+                        var moddedShop = deserializer.Deserialize<Kh2.SystemData.Shop.ShopHelper>(sourceText);
+                        ushort inventoriesBaseOffset = (ushort)(Kh2.SystemData.Shop.HeaderSize + shop.ShopEntries.Count * Kh2.SystemData.Shop.ShopEntrySize);
+                        ushort productsBaseOffset = (ushort)(inventoriesBaseOffset + shop.InventoryEntries.Count * Kh2.SystemData.Shop.InventoryEntrySize);
+                        List<Kh2.SystemData.Shop.ShopEntryHelper> moddedShopEntryHelpers = shop.ShopEntries.Select(x => x.ToShopEntryHelper(inventoriesBaseOffset)).ToList();
+                        if (moddedShop?.ShopEntryHelpers != null)
+                        {
+                            foreach (var shopEntryHelper in moddedShop.ShopEntryHelpers)
+                            {
+                                int entryIndex = moddedShopEntryHelpers.FindIndex(x => x.ShopID == shopEntryHelper.ShopID);
+                                if (entryIndex < 0)
+                                {
+                                    moddedShopEntryHelpers.Add(shopEntryHelper);
+                                }
+                                else
+                                {
+                                    moddedShopEntryHelpers[entryIndex] = shopEntryHelper;
+                                }
+                            }
+                        }
+                        inventoriesBaseOffset = (ushort)(Kh2.SystemData.Shop.HeaderSize + moddedShopEntryHelpers.Count * Kh2.SystemData.Shop.ShopEntrySize);
+                        shop.ShopEntries = moddedShopEntryHelpers.Select(x => x.ToShopEntry(inventoriesBaseOffset)).ToList();
+                        List<Kh2.SystemData.Shop.InventoryEntryHelper> moddedInventoryEntryHelpers = shop.InventoryEntries.Select((x, index) => 
+                            x.ToInventoryEntryHelper(index, productsBaseOffset)
+                        ).ToList();
+                        if (moddedShop?.InventoryEntryHelpers != null)
+                        {
+                            foreach (var inventoryEntryHelper in moddedShop.InventoryEntryHelpers)
+                            {
+                                int invIndex = inventoryEntryHelper.InventoryIndex;
+                                if (invIndex < 0)
+                                    throw new InvalidDataException($"Shop listpatch: InventoryIndex {invIndex} is an invalid index.");
+                                if (invIndex >= moddedInventoryEntryHelpers.Count)
+                                {
+                                    int dummiesToAdd = invIndex - moddedInventoryEntryHelpers.Count;
+                                    for (int i = 0; i < dummiesToAdd; i++)
+                                    {
+                                        moddedInventoryEntryHelpers.Add(new Kh2.SystemData.Shop.InventoryEntryHelper {
+                                            InventoryIndex = moddedInventoryEntryHelpers.Count + i,
+                                            UnlockEventID = 0,
+                                            ProductCount = 0,
+                                            ProductStartIndex = 0
+                                        });
+                                    }
+                                    moddedInventoryEntryHelpers.Add(inventoryEntryHelper);
+                                }
+                                else
+                                {
+                                    moddedInventoryEntryHelpers[invIndex] = inventoryEntryHelper;
+                                }
+                            }
+                        }
+                        productsBaseOffset = (ushort)(inventoriesBaseOffset + moddedInventoryEntryHelpers.Count * Kh2.SystemData.Shop.InventoryEntrySize);
+                        shop.InventoryEntries = moddedInventoryEntryHelpers.Select(x => x.ToInventoryEntry(productsBaseOffset)).ToList();
+                        List<Kh2.SystemData.Shop.ProductEntryHelper> moddedProductEntryHelpers = shop.ProductEntries.Select((x, index) => x.ToProductEntryHelper(index)).ToList();
+                        if (moddedShop?.ProductEntryHelpers != null)
+                        {
+                            foreach (var productEntryHelper in moddedShop.ProductEntryHelpers)
+                            {
+                                int prodIndex = productEntryHelper.ProductIndex;
+                                if (prodIndex < 0)
+                                    throw new InvalidDataException($"Shop listpatch: ProductIndex {prodIndex} is an invalid index.");
+                                if (prodIndex >= moddedProductEntryHelpers.Count)
+                                {
+                                    int dummiesToAdd = prodIndex - moddedProductEntryHelpers.Count;
+                                    for (int i = 0; i < dummiesToAdd; i++)
+                                    {
+                                        moddedProductEntryHelpers.Add(new Kh2.SystemData.Shop.ProductEntryHelper
+                                        {
+                                            ProductIndex = moddedProductEntryHelpers.Count + i,
+                                            ItemID = 0
+                                        });
+                                    }
+                                    moddedProductEntryHelpers.Add(productEntryHelper);
+                                }
+                                else
+                                {
+                                    moddedProductEntryHelpers[prodIndex] = productEntryHelper;
+                                }
+                            }
+                        }
+                        shop.ProductEntries = moddedProductEntryHelpers.Select(x => x.ToProductEntry()).ToList();
+                        List<Kh2.SystemData.Shop.ProductEntryHelper> moddedValidProductEntryHelpers = shop.ValidProductEntries.Select((x, index) => x.ToProductEntryHelper(index)).ToList();
+                        if (moddedShop?.ValidProductEntryHelpers != null)
+                        {
+                            foreach (var productEntryHelper in moddedShop.ValidProductEntryHelpers)
+                            {
+                                int prodIndex = productEntryHelper.ProductIndex;
+                                if (prodIndex < 0)
+                                    throw new InvalidDataException($"Shop listpatch: ValidProductIndex {prodIndex} is an invalid index.");
+                                if (prodIndex >= moddedValidProductEntryHelpers.Count)
+                                {
+                                    int dummiesToAdd = prodIndex - moddedValidProductEntryHelpers.Count;
+                                    for (int i = 0; i < dummiesToAdd; i++)
+                                    {
+                                        moddedValidProductEntryHelpers.Add(new Kh2.SystemData.Shop.ProductEntryHelper
+                                        {
+                                            ProductIndex = moddedValidProductEntryHelpers.Count + i,
+                                            ItemID = 0
+                                        });
+                                    }
+                                    moddedValidProductEntryHelpers.Add(productEntryHelper);
+                                }
+                                else
+                                {
+                                    moddedValidProductEntryHelpers[prodIndex] = productEntryHelper;
+                                }
+                            }
+                        }
+                        shop.ValidProductEntries = moddedValidProductEntryHelpers.Select(x => x.ToProductEntry()).ToList();
+                        Kh2.SystemData.Shop.Write(stream.SetPosition(0), shop);
                         break;
 
                     case "sklt":
@@ -1193,14 +1386,15 @@ namespace OpenKh.Patcher
 
                             if (definition != null)
                             {
-                                definition.Unknown = patch.Unknown;
+                                definition.Type = patch.Type;
 
                                 var contentList = new List<Libretto.TalkMessageContent>();
                                 foreach (var contentPatch in patch.Contents)
                                 {
                                     contentList.Add(new Libretto.TalkMessageContent
                                     {
-                                        Unknown1 = contentPatch.Unknown1,
+                                        CodeType = contentPatch.CodeType,
+                                        Unknown = contentPatch.Unknown,
                                         TextId = contentPatch.TextId
                                     });
                                 }
@@ -1211,7 +1405,7 @@ namespace OpenKh.Patcher
                                 var newDefinition = new Libretto.TalkMessageDefinition
                                 {
                                     TalkMessageId = patch.TalkMessageId,
-                                    Unknown = patch.Unknown,
+                                    Type = patch.Type,
                                     ContentPointer = 0 // Will update this later after adding content entries
                                 };
 
@@ -1223,7 +1417,8 @@ namespace OpenKh.Patcher
                                 {
                                     contentList.Add(new Libretto.TalkMessageContent
                                     {
-                                        Unknown1 = contentPatch.Unknown1,
+                                        CodeType = contentPatch.CodeType,
+                                        Unknown = contentPatch.Unknown,
                                         TextId = contentPatch.TextId
                                     });
                                 }
@@ -1260,14 +1455,28 @@ namespace OpenKh.Patcher
                                 var memtEntry = memtEntries[patch.Index];
                                 memtEntry.WorldId = patch.WorldId;
                                 memtEntry.CheckStoryFlag = patch.CheckStoryFlag;
-                                memtEntry.CheckStoryFlagNegation = patch.CheckStoryFlagNegation;
-                                memtEntry.Unk06 = patch.Unk06;
-                                memtEntry.Unk08 = patch.Unk08;
-                                memtEntry.Unk0A = patch.Unk0A;
-                                memtEntry.Unk0C = patch.Unk0C;
-                                memtEntry.Unk0E = patch.Unk0E;
-                                memtEntry.Members = patch.Members.ToArray();
+                                if (!string.IsNullOrWhiteSpace(patch.FlagForWorld))
+                                {
+                                    if (!worldIndexMap.TryGetValue(patch.FlagForWorld.Replace(" ", "").ToLower(), out var worldId))
+                                        throw new Exception($"Unknown world name '{patch.FlagForWorld}' in CheckStoryFlagWorld.");
 
+                                    memtEntry.CheckStoryFlag += (short)(worldId * 1024);
+                                }
+
+                                memtEntry.CheckStoryFlagNegation = patch.CheckStoryFlagNegation;
+                                if (!string.IsNullOrWhiteSpace(patch.NegationFlagForWorld))
+                                {
+                                    if (!worldIndexMap.TryGetValue(patch.NegationFlagForWorld.Replace(" ", "").ToLower(), out var worldId))
+                                        throw new Exception($"Unknown world name '{patch.NegationFlagForWorld}' in CheckStoryFlagNegationWorld.");
+
+                                    memtEntry.CheckStoryFlagNegation += (short)(worldId * 1024);
+                                }
+                                memtEntry.CheckArea = patch.CheckArea;
+                                memtEntry.Padding = patch.Padding;
+                                memtEntry.PlayerSize = patch.PlayerSize;
+                                memtEntry.FriendSize = patch.FriendSize;
+
+                                memtEntry.Members = patch.Members.ToArray();
                                 memtEntries[patch.Index] = memtEntry;
                             }
 

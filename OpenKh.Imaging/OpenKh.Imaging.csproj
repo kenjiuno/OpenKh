@@ -1,16 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;net6.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
-  </PropertyGroup>
+  <AssemblyVersion>25.02.10.0</AssemblyVersion><FileVersion>25.02.10.0</FileVersion><Version>25.02.10.0-local</Version><InformationalVersion>25.02.10.0-local</InformationalVersion><Authors>OpenKH contributors</Authors><Company>OpenKH</Company><Copyright>Copyright (C) OpenKH </Copyright><Description>https://github.com/OpenKH/OpenKh</Description></PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\OpenKh.Common\OpenKh.Common.csproj" />
 
     <PackageReference Include="System.Memory" Version="4.5.5" />
     <PackageReference Include="Crc32.NET" Version="1.2.0" />
-    <PackageReference Include="DotNetZip" Version="1.16.0" />
+    <PackageReference Include="Iconic.Zlib.Netstandard" Version="1.0.0" />
   </ItemGroup>
 
 </Project>

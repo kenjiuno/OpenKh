@@ -18,9 +18,10 @@
         </Grid>
 
         <DataGrid Name="DataTable"
-                AutoGenerateColumns="False"
-                ItemsSource="{Binding Collisions}"
-                CanUserAddRows="False">
+                  AutoGenerateColumns="False"
+                  ItemsSource="{Binding Collisions}"
+                  CanUserAddRows="False"
+                  SelectionChanged="DataTable_SelectionChanged" GridLinesVisibility="All" HeadersVisibility="Column">
             <DataGrid.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="Add collision" Click="Collision_Add"/>
@@ -33,13 +34,8 @@
             </DataGrid.ContextMenu>
 
             <DataGrid.Resources>
-                <local:CollisionTypeConverter x:Key="CollisionTypeConverter" />
-                <local:CollisionShapeConverter x:Key="CollisionShapeConverter" />
-
-                <Style TargetType="DataGridRow">
-                    <EventSetter Event="MouseLeftButtonUp" Handler="DataGridRow_MouseLeftButtonUp"/>
-                </Style>
-
+                <local:CollisionTypeConverter x:Key="CollisionType_Converter" />
+                <local:CollisionShapeConverter x:Key="CollisionShape_Converter" />
             </DataGrid.Resources>
 
             <DataGrid.Columns>
@@ -50,35 +46,23 @@
                 <DataGridTemplateColumn Header="Shape">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Shape, Converter={StaticResource CollisionShapeConverter}}" />
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                    <DataGridTemplateColumn.CellEditingTemplate>
-                        <DataTemplate>
-                            <ComboBox SelectedValue="{Binding Shape}"
-                                      SelectedValuePath="Key"
-                                      DisplayMemberPath="Value"
+                            <ComboBox HorizontalAlignment="Stretch"
+                                      SelectedItem="{Binding Shape, Converter={StaticResource CollisionShape_Converter}, Mode=TwoWay}"
                                       ItemsSource="{Binding DataContext.CollisionShapeOptions, RelativeSource={RelativeSource AncestorType=UserControl}}" />
                         </DataTemplate>
-                    </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                
+
                 <DataGridTemplateColumn Header="Type">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Type, Converter={StaticResource CollisionTypeConverter}}" />
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                    <DataGridTemplateColumn.CellEditingTemplate>
-                        <DataTemplate>
-                            <ComboBox SelectedValue="{Binding Type}"
-                                      SelectedValuePath="Key"
-                                      DisplayMemberPath="Value"
+                            <ComboBox HorizontalAlignment="Stretch"
+                                      SelectedItem="{Binding Type, Converter={StaticResource CollisionType_Converter}, Mode=TwoWay}"
                                       ItemsSource="{Binding DataContext.CollisionTypeOptions, RelativeSource={RelativeSource AncestorType=UserControl}}" />
                         </DataTemplate>
-                    </DataGridTemplateColumn.CellEditingTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                
+
                 <DataGridTextColumn Binding="{Binding Path=Bone}" Header="Bone" />
                 <DataGridTextColumn Binding="{Binding Path=PositionX}" Header="PositionX" />
                 <DataGridTextColumn Binding="{Binding Path=PositionY}" Header="PositionY" />

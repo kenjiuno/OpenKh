@@ -27,11 +27,6 @@ namespace OpenKh.Tools.Kh2ObjectEditor.Modules.Effects
             ImageFrame.Source = BitmapImage;
         }
 
-        private void List_Textures_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
-        {
-            loadImage(List_Textures.SelectedIndex);
-        }
-
         public void EffectImage_Export(object sender, RoutedEventArgs e)
         {
             if (List_Textures.SelectedItem != null)
@@ -39,7 +34,12 @@ namespace OpenKh.Tools.Kh2ObjectEditor.Modules.Effects
                 ThisVM.ExportTexture(List_Textures.SelectedIndex);
             }
         }
-
+        
+        public void EffectImage_ExportAll(object sender, RoutedEventArgs e)
+        {
+            ThisVM.ExportAllTextures();
+        }
+        
         public void EffectImage_Replace(object sender, RoutedEventArgs e)
         {
             if (List_Textures.SelectedItem != null)
@@ -47,6 +47,12 @@ namespace OpenKh.Tools.Kh2ObjectEditor.Modules.Effects
                 ThisVM.ReplaceTexture(List_Textures.SelectedIndex);
                 loadImage(List_Textures.SelectedIndex);
             }
+        }
+
+        private void EffectImage_Selected(object sender, SelectionChangedEventArgs e)
+        {
+            if (List_Textures.SelectedItem != null)
+                loadImage(List_Textures.SelectedIndex);
         }
     }
 }

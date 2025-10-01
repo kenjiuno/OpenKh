@@ -22,6 +22,8 @@ namespace OpenKh.Patcher
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Game { get; set; }
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public int Specifications { get; set; }
         public List<Dependency> Dependencies { get; set; }
+        [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public bool IsCollection { get; set; }
+        [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public List<string> CollectionGames { get; set; }
         public List<AssetFile> Assets { get; set; }
 
         private static readonly IDeserializer deserializer =
@@ -92,18 +94,102 @@ namespace OpenKh.Patcher
     public class AssetFile
     {
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Name { get; set; }
+
+        /// <summary>
+        /// "areadatascript"
+        /// "bdscript"
+        /// "binarc"
+        /// "copy"
+        /// "imgd"
+        /// "imgz"
+        /// "kh2msg"
+        /// "listpatch"
+        /// "spawnpoint"
+        /// "synthpatch"
+        /// </summary>
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Method { get; set; }
+
+        /// <summary>
+        /// null
+        /// ""
+        /// "both"
+        /// "pc"
+        /// "ps2"
+        /// </summary>
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Platform { get; set; }
+
+        /// <summary>
+        /// (null)
+        /// bbs_first
+        /// bbs_fourth
+        /// bbs_second
+        /// bbs_third
+        /// kh1_fifth
+        /// kh1_first
+        /// kh1_fourth
+        /// kh1_second
+        /// kh1_third
+        /// kh2_fifth
+        /// kh2_first
+        /// kh2_fourth
+        /// kh2_second
+        /// kh2_sixth
+        /// kh2_third
+        /// kh3d_first
+        /// kh3d_fourth
+        /// kh3d_second
+        /// kh3d_third
+        /// Recom
+        /// Theater
+        /// </summary>
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Package { get; set; }
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public List<Multi> Multi { get; set; }
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public List<AssetFile> Source { get; set; }
 
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public bool Required { get; set; }
+
+        /// <summary>
+        /// "areadatascript"
+        /// "areadataspawn"
+        /// "atkp"
+        /// "bdx"
+        /// "Binary"
+        /// "bons"
+        /// "cmd"
+        /// "condition"
+        /// "enmp"
+        /// "fmab"
+        /// "fmlv"
+        /// "imgd"
+        /// "imgz"
+        /// "internal"
+        /// "item"
+        /// "jigsaw"
+        /// "level"
+        /// "libretto"
+        /// "list"
+        /// "localset"
+        /// "lvup"
+        /// "magc"
+        /// "memt"
+        /// "objentry"
+        /// "place"
+        /// "plrp"
+        /// "przt"
+        /// "recipe"
+        /// "sklt"
+        /// "soundinfo"
+        /// "Synthesis"
+        /// "trsr"
+        /// "vtbl"
+        /// </summary>
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Type { get; set; }
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public Bar.MotionsetType MotionsetType { get; set; }
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Language { get; set; }
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public bool IsSwizzled { get; set; }
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public int Index { get; set; }
+        [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Game { get; set; }
+        [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public bool CollectionOptional { get; set; }
     }
 
     public class Multi

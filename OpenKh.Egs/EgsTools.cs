@@ -68,7 +68,13 @@ namespace OpenKh.Egs
 
         #region Extract
 
-        public static void Extract(string inputHed, string output, bool doNotExtractAgain = false)
+        public enum ExtractFileOutputMode
+        {
+            SeparateRoot,
+            Adjacent,
+        }
+
+        public static void Extract(string inputHed, string output, bool doNotExtractAgain = false, ExtractFileOutputMode outputMode = ExtractFileOutputMode.SeparateRoot)
         {
             var outputDir = output ?? Path.GetFileNameWithoutExtension(inputHed);
             using var hedStream = File.OpenRead(inputHed);
@@ -80,7 +86,11 @@ namespace OpenKh.Egs
                 if (!Names.TryGetValue(hash, out var fileName))
                     fileName = $"{hash}.dat";
 
-                var outputFileName = Path.Combine(outputDir, ORIGINAL_FILES_FOLDER_NAME, fileName);
+                var outputFileName = outputMode switch
+                {
+                    ExtractFileOutputMode.Adjacent => Path.Combine(outputDir, fileName),
+                    _ => Path.Combine(outputDir, ORIGINAL_FILES_FOLDER_NAME, fileName),
+                };
 
                 if (doNotExtractAgain && File.Exists(outputFileName))
                     continue;
@@ -92,7 +102,11 @@ namespace OpenKh.Egs
 
                 File.Create(outputFileName).Using(stream => stream.Write(hdAsset.OriginalData));
 
-                outputFileName = Path.Combine(outputDir, REMASTERED_FILES_FOLDER_NAME, fileName);
+                outputFileName = outputMode switch
+                {
+                    ExtractFileOutputMode.Adjacent => Path.Combine(outputDir, $"{fileName}.remastered.d"),
+                    _ => Path.Combine(outputDir, REMASTERED_FILES_FOLDER_NAME, fileName),
+                };
 
                 foreach (var asset in hdAsset.Assets)
                 {
@@ -774,22 +788,13 @@ namespace OpenKh.Egs
     class PAX
     {
         public List<int> Offsets = new List<int>();
-        SortedDictionary<int, int> TempOffsets = new SortedDictionary<int, int>();
-        SortedDictionary<int, Tuple<string, int>> TempScanPAX = new SortedDictionary<int, Tuple<string, int>>();
         public Dictionary<string, int> ScanPAX = new Dictionary<string, int>();
         public int TextureCount = 0;
         public bool Invalid = false;
 
-        //PAX Textures are a bit weird to link to their remastered counterparts.
-        //Currently all offsets seem to be gotten correctly, but the order of them doesn't
-        //always match how the devs seemed to have them ordered in the remastered folder.
-        //If adding a new PAX or file with a PAX the user will usually have to manually re-order their remastered
-        //textures to link up correctly by renaming them.
-
         public PAX(byte[] AssetData, int AssetOffset)
         {
             using MemoryStream ms = new MemoryStream(AssetData);
-            //ScanPAX.Clear();
 
             var magic = ms.ReadInt32();
             if (magic != 1599619408 && AssetOffset == 0) //PAX_
@@ -798,102 +803,114 @@ namespace OpenKh.Egs
                 Helpers.ScanPrint("PAX could not be scanned! Wrong filetype?");
                 return;
             }
-            ms.ReadInt64(); //we just skip these 8 bytes. unsure what they are for.
+            ms.ReadInt64(); //Skip these 8 bytes. They're two int offsets, for "DEBUGInfo" and "Elemnum"
 
-            var Dpxoffset = ms.ReadInt32();
-            ms.Seek(Dpxoffset + 0xC, SeekOrigin.Begin);
+            var Dpxoffset = ms.ReadInt32(); //Get DPX offset
+            ms.Seek(Dpxoffset + 0xC, SeekOrigin.Begin); //Then at 0x0C from the DpxOffset, start seeking.
 
-            var Unk1Count = ms.ReadInt32(); //unsure what this block of data is for. we seem to not need it though.
-            ms.Seek(Unk1Count * 0x20, SeekOrigin.Current); //so skip it to get to the part we actually need.
+            var ParNumCount = ms.ReadInt32(); //ParNum count. We don't need it, but we need to skip over it.
+            ms.Seek(ParNumCount * 0x20, SeekOrigin.Current); //so skip it to get to the part we actually need.
 
-            var DpdCount = ms.ReadInt32();
+            var DpdCount = ms.ReadInt32(); //Gets us to DPD Count.
             var DpdOffsets = ((int)ms.Position); //the DPDs are what have our textures so save the position of this area.
 
-            for (int d = 0; d < DpdCount; d++)
+            for (int d = 0; d < DpdCount; d++) //Loop to iterate over count of DPDs to get offsets.
             {
-                ms.Seek(DpdOffsets + (d * 0x4), SeekOrigin.Begin);
+                ms.Seek(DpdOffsets + (d * 0x4), SeekOrigin.Begin); //Get the offset of the current DPD in the list
 
-                var DpdOffset = ms.ReadInt32();
-                ms.Seek(Dpxoffset + DpdOffset, SeekOrigin.Begin);
+                var DpdOffset = ms.ReadInt32(); //Save it here
+                ms.Seek(Dpxoffset + DpdOffset, SeekOrigin.Begin); //Then get to that DPD by doing DpxOffset+DpdOffset
 
-                ms.ReadInt32(); //unknown
+                ms.ReadInt32(); //This is numPdata
 
-                var Unk2Count = ms.ReadInt32(); //don't know this block of data, so skip it to get to what me need
-                ms.Seek(Unk2Count * 0x4, SeekOrigin.Current);
+                var PDataCount = ms.ReadInt32(); //This is PData count. Various parameters of the DPD here, but we don't need it. Skip.
+                ms.Seek(PDataCount * 0x4, SeekOrigin.Current);
 
                 var DpdTexCount = ms.ReadInt32(); //finally found the texture offsets
                 var DpdTexOffsets = ((int)ms.Position); //save this position
 
-                for (int t = 0; t < DpdTexCount; t++)
+                List<Tuple<short, int, int>> textures = new List<Tuple<short, int, int>>(); // Store value1 (short) and texture offset
+
+                for (int t = 0; t < DpdTexCount; t++) //For each DpdTexCount, run this.
                 {
-                    //Console.WriteLine("new PAX texture found");
+                    ms.Seek(DpdTexOffsets + (t * 0x4), SeekOrigin.Begin); //Then get each DPD textures offsets.
+                    var DpdTexOffset = ms.ReadInt32(); //Get the offset
+                    ms.Seek(Dpxoffset + DpdOffset + DpdTexOffset, SeekOrigin.Begin); //Then get to the offset, using DpxOffset+DpdOffset+DpdTexOffset.
+                    short value1 = ms.ReadInt16(); // Read value1 as a short (2 bytes)
+                    ms.Seek(6, SeekOrigin.Current); // Skip the next 6 bytes. 2 bytes for a different value and 4 bytes for formerly value2)
+                    int shTexXY = ms.ReadInt32(); // Read shTexXY at 0x08 offset. Some textures can share the first two bytes but aren't considered "combo" textures if they don't shift the texture on the X or Y plane.
 
-                    ms.Seek(DpdTexOffsets + (t * 0x4), SeekOrigin.Begin);
-                    var DpdTexOffset = ms.ReadInt32();
-                    ms.Seek(Dpxoffset + DpdOffset + DpdTexOffset, SeekOrigin.Begin);
-                    int value1 = ms.ReadInt32(); //use this as a key in  the dictionary
-                    ms.ReadInt32();
-                    int value2 = ms.ReadInt32(); //this value seems to define if a texture is new
+                    textures.Add(new Tuple<short, int, int>(value1, DpdTexOffset, shTexXY)); // Store value1 and texture offset
+                }
 
-                    if (value2 == 0)
+                // Sort textures by value1
+                textures.Sort((a, b) => a.Item1.CompareTo(b.Item1));
+
+                // Track offsets for each value1
+                Dictionary<short, int> offsets = new Dictionary<short, int>();
+
+                for (int t = 0; t < textures.Count; t++)
+                {
+                    short value1 = textures[t].Item1;
+                    int texoff = textures[t].Item2;
+                    int shTexXY = textures[t].Item3;
+
+                    // Calculate the base offset for this texture
+                    int baseOffset = texoff + 0x20;
+
+                    // Track the offset for this value1
+                    if (!offsets.ContainsKey(value1))
                     {
-                        //Console.WriteLine("new texture found");
+                        offsets[value1] = baseOffset;
+                    }
 
-                        TextureCount += 1;
-                        int finaloffset = AssetOffset + Dpxoffset + DpdOffset + (DpdTexOffset + 0x20) + 0x20000000;
-                        var ScanTuple = new Tuple<string, int>($"PAX texture was found in DPD {d} as image {t}!", value2);
+                    // Calculate the final offset
+                    int finaloffset = AssetOffset + Dpxoffset + DpdOffset + offsets[value1] + 0x20000000;
 
-                        //check to see if our key already exists
-                        if (!TempOffsets.ContainsKey(value1))
+                    // Check if this texture should be combined with the previous one
+                    if (t > 0 && textures[t].Item1 == textures[t - 1].Item1)
+                    {
+                        int prev_shTexXY = textures[t - 1].Item3;
+                        int curr_shTexXY = textures[t].Item3;
+                        if (curr_shTexXY != 0 || prev_shTexXY != 0)
                         {
-                            //if it doesn't then add it as normal
-                            TempOffsets.Add(value1, finaloffset);
-                            TempScanPAX.Add(value1, ScanTuple);
+                            // Adjust previous entry ONLY if shTexXY for either the current or previous texture is 0.
+                            Offsets[Offsets.Count - 1] = finaloffset;
                         }
                         else
                         {
-                            //if it does then we need to increase the offset by 1 for the original value
-                            TempOffsets[value1] += 1;
-                            //then use that new value + 1 as our new offset for the duplicate key then add t to our key so that it can actually be added.
-                            TempOffsets.Add(value1 + t, (TempOffsets[value1] + 1));
-                            TempScanPAX.Add(value1 + t, ScanTuple);
+                            Offsets.Add(finaloffset);
+                            TextureCount++;
                         }
                     }
                     else
                     {
-                        var ScanTuple = new Tuple<string, int>($"PAX \"combo\" texture was found in DPD {d} as image {t}!", value2);
-                        //int prevValue = TempOffsets[TempOffsets.Count - 1];
-                        TempScanPAX.Add(value1, ScanTuple);
-                        //ScanPAX.Add($"PAX \"combo\" texture was found in DPD {d} as image {t}!", value2);
+                        // Add new entry
+                        Offsets.Add(finaloffset);
+                        TextureCount++; // Increment TextureCount for new textures
                     }
-                }
-                //Add our current list of offsets from the dpd to our main ffsets list
-                Offsets.AddRange(TempOffsets.Values);
-                foreach (Tuple<string,int> PT in TempScanPAX.Values)
-                    ScanPAX.Add(PT.Item1, PT.Item2);
 
-                //then clear the temp list for the next dpd
-                TempOffsets.Clear();
-                TempScanPAX.Clear();
+                    // Add to ScanPAX for logging
+                    string scanMessage = $"PAX texture was found in DPD {d} as image {t}!";
+                    ScanPAX.Add(scanMessage, value1);
+                }
             }
 
             if (AssetOffset == 0)
             {
                 int imageNum = 0;
-                for (int a = 0; a < ScanPAX.Count; a++)
+                foreach (var entry in ScanPAX)
                 {
-                    if (ScanPAX.ElementAt(a).Value == 0)
+                    if (entry.Value == 0)
                     {
-                        Helpers.ScanPrint(ScanPAX.ElementAt(a).Key + $" | Aprox. HD Texture name: -{imageNum}.dds");
+                        Helpers.ScanPrint(entry.Key + $" | Aprox. HD Texture name: -{imageNum}.dds");
                         imageNum += 1;
                     }
                     else
                     {
-                        Helpers.ScanPrint(ScanPAX.ElementAt(a).Key + $" Combine it with HD Texture -{imageNum - 1}.dds for proper HD linking.");
+                        Helpers.ScanPrint(entry.Key + $" Combine it with HD Texture -{imageNum - 1}.dds for proper HD linking.");
                     }
-
                 }
-
             }
         }
     }
@@ -1237,7 +1254,7 @@ namespace OpenKh.Egs
 
             TextureCount += GSInfoCount;
 
-            //get all the image data offsets from the CLUT Transfer Info blocks
+            // Get all the image data offsets from the CLUT Transfer Info blocks
             Dictionary<int, int> PicOffsets = new Dictionary<int, int>();
             for (int t = 0; t < TextureInfoCount; t++)
             {
@@ -1245,9 +1262,9 @@ namespace OpenKh.Egs
                 PicOffsets.Add(t, ms.ReadInt32());
             }
 
-            //first loop to get number of pixel format 8 textures
-            //this is needed to calculate the correct HD link offsets because for some reason
-            //Pixel format 4 textures need to be adjusted by Pixel8 image count * 16
+            // First loop to get the number of pixel format 8 textures
+            // This is needed to calculate the correct HD link offsets because for some reason
+            // Pixel format 4 textures need to be adjusted by Pixel8 image count * 16
             int Modifier = 0;
             for (int m = 0; m < GSInfoCount; m++)
             {
@@ -1258,11 +1275,15 @@ namespace OpenKh.Egs
                     Modifier += 1;
             }
 
-            //second loop to get actual offsets
-            //We need to keep track of how many of each type of texture we find
-            //to correctly calculate what the game expects for the HD link offsets.
+            // Second loop to get actual offsets
+            // We need to keep track of how many of each type of texture we find
+            // to correctly calculate what the game expects for the HD link offsets.
             int Pxl4Count = 0;
             int Pxl8Count = 0;
+
+            // Store base texture offsets
+            List<int> baseTextureOffsets = new List<int>();
+
             for (int p = 0; p < GSInfoCount; p++)
             {
                 ms.Seek(OffsetDataOff + p, SeekOrigin.Begin);
@@ -1275,35 +1296,59 @@ namespace OpenKh.Egs
                 int FinalOffset = AssetOffset + PicOffsets[CurrentKey] + 0x20000000;
                 if (PSM == 20)
                 {
-                    Offsets.Add(FinalOffset + Pxl4Count + (Modifier * 0x10));
+                    FinalOffset += Pxl4Count + (Modifier * 0x10);
                     Pxl4Count += 1;
                 }
                 else
                 {
-                    Offsets.Add(FinalOffset + (Pxl8Count * 0x10));
+                    FinalOffset += (Pxl8Count * 0x10);
                     Pxl8Count += 1;
                 }
+
+                baseTextureOffsets.Add(FinalOffset);
             }
 
+            // Scan for TEXA textures and store them in a map
+            Dictionary<int, List<int>> texaMapping = new Dictionary<int, List<int>>();
             int index = Helpers.IndexOfByteArray(AssetData, System.Text.Encoding.UTF8.GetBytes("TEXA"), 0);
             while (index > -1)
             {
                 ms.Seek(index + 0x0a, SeekOrigin.Begin);
                 int imageToApplyTo = (int)ms.ReadInt16();
-            
-                ms.Seek(0x1c, SeekOrigin.Current);
+
+                ms.Seek(index + 0x28, SeekOrigin.Begin);
                 int texaOffset = ms.ReadInt32();
-                int offset = index + texaOffset + 0x08 + (imageToApplyTo * 0x10) + 0x20000000;
-                Offsets.Add(AssetOffset + offset);
-            
+                int texaFinalOffset = AssetOffset + index + texaOffset + 0x08 + (imageToApplyTo * 0x10) + 0x20000000;
+
+                if (!texaMapping.ContainsKey(imageToApplyTo))
+                {
+                    texaMapping[imageToApplyTo] = new List<int>();
+                }
+                texaMapping[imageToApplyTo].Add(texaFinalOffset);
+
                 TextureCount++;
                 index = Helpers.IndexOfByteArray(AssetData, System.Text.Encoding.UTF8.GetBytes("TEXA"), index + 1);
+            }
+
+            // Insert textures in the correct order with TEXA textures immediately after their corresponding base texture
+            for (int i = 0; i < baseTextureOffsets.Count; i++)
+            {
+                Offsets.Add(baseTextureOffsets[i]);
+                if (texaMapping.ContainsKey(i))
+                {
+                    foreach (int texaOffset in texaMapping[i])
+                    {
+                        Offsets.Add(texaOffset);
+                    }
+                }
             }
 
             if (AssetOffset == 0)
             {
                 for (int i = 0; i < Offsets.Count; i++)
+                {
                     Helpers.ScanPrint($"RAW texture found! | Suggested HD Texture name: -{i}.dds");
+                }
             }
         }
     }

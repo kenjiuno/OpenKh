@@ -1,10 +1,10 @@
 using Antlr4.Runtime;
-using OpenKh.Command.Bdxio.Models;
+using OpenKh.Kh2Bdx.Models;
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
 
-namespace OpenKh.Tests.Commands
+namespace OpenKh.Tests.kh2
 {
     public class BdxAntlrGrammarTests
     {

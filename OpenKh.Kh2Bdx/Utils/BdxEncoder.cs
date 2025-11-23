@@ -1,15 +1,15 @@
 using Antlr4.Runtime;
 using Antlr4.Runtime.Tree;
 using NLog;
-using OpenKh.Command.Bdxio.Models;
+using OpenKh.Kh2Bdx.Models;
 using System.Globalization;
 using System.Text;
 using Xe.BinaryMapper;
 using static BdxScriptParser;
-using static OpenKh.Command.Bdxio.Models.BdxHeader;
-using static OpenKh.Command.Bdxio.Models.BdxInstructionDesc;
+using static OpenKh.Kh2Bdx.Models.BdxHeader;
+using static OpenKh.Kh2Bdx.Models.BdxInstructionDesc;
 
-namespace OpenKh.Command.Bdxio.Utils
+namespace OpenKh.Kh2Bdx.Utils
 {
     public class BdxEncoder
     {

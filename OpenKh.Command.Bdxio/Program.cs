@@ -8,6 +8,7 @@ namespace OpenKh.Command.Bdxio
     [VersionOptionFromMember("--version", MemberName = nameof(GetVersion))]
     [Subcommand(typeof(DecodeCommand))]
     [Subcommand(typeof(EncodeCommand))]
+    [Subcommand(typeof(EncodeCCommand))]
     internal class Program
     {
         static int Main(string[] args)

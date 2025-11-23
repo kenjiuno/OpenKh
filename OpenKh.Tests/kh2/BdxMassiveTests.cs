@@ -1,4 +1,4 @@
-using OpenKh.Command.Bdxio.Utils;
+using OpenKh.Kh2Bdx.Utils;
 using OpenKh.Common;
 using OpenKh.Kh2;
 using System;
@@ -7,7 +7,7 @@ using System.IO;
 using System.Linq;
 using Xunit;
 
-namespace OpenKh.Tests.Commands
+namespace OpenKh.Tests.kh2
 {
     public class BdxMassiveTests
     {

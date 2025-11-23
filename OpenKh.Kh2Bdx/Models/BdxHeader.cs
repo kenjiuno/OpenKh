@@ -2,7 +2,7 @@ using System.Text;
 using Xe.BinaryMapper;
 using YamlDotNet.Serialization;
 
-namespace OpenKh.Command.Bdxio.Models
+namespace OpenKh.Kh2Bdx.Models
 {
     public class BdxHeader
     {

@@ -1,12 +1,12 @@
-using OpenKh.Command.Bdxio.Models;
+using OpenKh.Kh2Bdx.Models;
 using OpenKh.Common;
 using System.Globalization;
 using System.Text;
 using Xe.BinaryMapper;
 using YamlDotNet.Serialization;
-using static OpenKh.Command.Bdxio.Models.BdxHeader;
+using static OpenKh.Kh2Bdx.Models.BdxHeader;
 
-namespace OpenKh.Command.Bdxio.Utils
+namespace OpenKh.Kh2Bdx.Utils
 {
     public class BdxDecoder
     {

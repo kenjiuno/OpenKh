@@ -1,12 +1,12 @@
-using OpenKh.Command.Bdxio.Models;
-using OpenKh.Command.Bdxio.Utils;
+using OpenKh.Kh2Bdx.Models;
+using OpenKh.Kh2Bdx.Utils;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using Xunit;
 
-namespace OpenKh.Tests.Commands
+namespace OpenKh.Tests.kh2
 {
     public class BdxRegressionTests
     {

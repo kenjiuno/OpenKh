@@ -1,18 +1,17 @@
 using McMaster.Extensions.CommandLineUtils;
 using NLog;
-using OpenKh.Kh2Bdx.Models;
 using OpenKh.Kh2Bdx.Utils;
 using System.ComponentModel.DataAnnotations;
 
 namespace OpenKh.Command.Bdxio.Commands
 {
     [HelpOption]
-    [Command(Description = "encode bdx")]
-    internal class EncodeCommand
+    [Command(Description = "encode c")]
+    internal class EncodeCCommand
     {
         [Required]
         [FileExists]
-        [Argument(0, Description = "Input text file")]
+        [Argument(0, Description = "Input c file")]
         public string? InputFile { get; set; }
 
         [Argument(1, Description = "Output bdx file")]
@@ -31,25 +30,14 @@ namespace OpenKh.Command.Bdxio.Commands
 
             logger.Debug($"Saving to: {outFile}");
 
-            var ascii = BdxAsciiModel.ParseText(File.ReadAllText(InputFile));
-            var decoder = new BdxEncoder(
-                header: new YamlDotNet.Serialization.DeserializerBuilder()
-                    .Build()
-                    .Deserialize<BdxHeader>(
-                        ascii.Header ?? ""
-                    ),
-                script: ascii.GetLineNumberRetainedScriptBody(),
-                scriptName: InputFile,
-                loadScript: fileName => File.ReadAllText(
-                    Path.Combine(
-                        Path.GetDirectoryName(InputFile) ?? ".",
-                        fileName
-                    )
-                )
-            );
-            File.WriteAllBytes(
+            var result = new BdxCEncoder()
+                .EncodeC(
+                    File.ReadAllText(InputFile),
+                    InputFile
+                );
+            File.WriteAllText(
                 outFile,
-                decoder.Content
+                result.Bdscript
             );
             return 0;
         }

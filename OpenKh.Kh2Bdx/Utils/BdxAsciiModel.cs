@@ -1,4 +1,4 @@
-namespace OpenKh.Command.Bdxio.Utils
+namespace OpenKh.Kh2Bdx.Utils
 {
     public class BdxAsciiModel
     {

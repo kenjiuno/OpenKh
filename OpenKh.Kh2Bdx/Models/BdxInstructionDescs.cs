@@ -1,6 +1,6 @@
-using static OpenKh.Command.Bdxio.Models.BdxInstructionDesc;
+using static OpenKh.Kh2Bdx.Models.BdxInstructionDesc;
 
-namespace OpenKh.Command.Bdxio.Models
+namespace OpenKh.Kh2Bdx.Models
 {
     public class BdxInstructionDescs
     {

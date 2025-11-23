@@ -1,6 +1,6 @@
 using OpenKh.Common.Utils;
 
-namespace OpenKh.Command.Bdxio.Models
+namespace OpenKh.Kh2Bdx.Models
 {
     public class BdxInstruction
     {

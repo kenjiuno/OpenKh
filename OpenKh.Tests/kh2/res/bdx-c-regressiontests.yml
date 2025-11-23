@@ -1,0 +1,223 @@
+patterns:
+- name: max
+  c: int max(int a, int b) { if (a < b) { return b; } else { return a; } }
+  expected: >-
+    _initc:
+     ret
+    max: ; func max
+     pop.sp 0
+     pop.sp 4
+     push.d.sp 0 ; a
+     push.d.sp 4 ; b
+     sltz
+     jz __max1else
+     push.d.sp 4 ; b
+     ret
+     b __max1endif
+    __max1else:
+     push.d.sp 0 ; a
+     ret
+    __max1endif:
+     ret
+- name: min
+  c: int min(int a, int b) { if (a > b) { return b; } else { return a; } }
+  expected: >-
+    _initc:
+     ret
+    min: ; func min
+     pop.sp 0
+     pop.sp 4
+     push.d.sp 0 ; a
+     push.d.sp 4 ; b
+     sgtz
+     jz __min1else
+     push.d.sp 4 ; b
+     ret
+     b __min1endif
+    __min1else:
+     push.d.sp 0 ; a
+     ret
+    __min1endif:
+     ret
+- name: fmax
+  c: int fmax(float a, float b) { if (a < b) { return b; } else { return a; } }
+  expected: >-
+    _initc:
+     ret
+    fmax: ; func fmax
+     pop.sp 0
+     pop.sp 4
+     push.d.sp 0 ; a
+     push.d.sp 4 ; b
+     sltz.s
+     jz __fmax1else
+     push.d.sp 4 ; b
+     ret
+     b __fmax1endif
+    __fmax1else:
+     push.d.sp 0 ; a
+     ret
+    __fmax1endif:
+     ret
+- name: add3
+  c: int add3(int a, int b, int c) { return a + b + c; }
+  expected: >-
+    _initc:
+     ret
+    add3: ; func add3
+     pop.sp 0
+     pop.sp 4
+     pop.sp 8
+     push.d.sp 0 ; a
+     push.d.sp 4 ; b
+     add
+     push.d.sp 8 ; c
+     add
+     ret
+     ret
+- name: addsub
+  c: int addsub(int a, int b, int c) { return a + b - c; }
+  expected: >-
+    _initc:
+     ret
+    addsub: ; func addsub
+     pop.sp 0
+     pop.sp 4
+     pop.sp 8
+     push.d.sp 0 ; a
+     push.d.sp 4 ; b
+     add
+     push.d.sp 8 ; c
+     sub
+     ret
+     ret
+- name: fmuldiv
+  c: float muldiv(float a, float b, float c) { return a * b / c; }
+  expected: >-
+    _initc:
+     ret
+    muldiv: ; func muldiv
+     pop.sp 0
+     pop.sp 4
+     pop.sp 8
+     push.d.sp 0 ; a
+     push.d.sp 4 ; b
+     mul.s
+     push.d.sp 8 ; c
+     div.s
+     ret
+     ret
+- name: andorxor
+  c: int andorxor() { return 1 & 2 | 3 ^ 4; }
+  expected: >-
+    _initc:
+     ret
+    andorxor: ; func andorxor
+     push 1
+     push 2
+     and
+     push 3
+     push 4
+     xor
+     or
+     ret
+     ret
+- name: comparators
+  c: void comparators() { 1 < 2; 1 <= 2; 1 == 2; 1 != 2; 1 > 2; 1 >= 2; }
+  expected: >-
+    _initc:
+     ret
+    comparators: ; func comparators
+     push 1
+     push 2
+     sltz
+     drop
+     push 1
+     push 2
+     slez
+     drop
+     push 1
+     push 2
+     sub
+     seqz
+     drop
+     push 1
+     push 2
+     sub
+     snez
+     drop
+     push 1
+     push 2
+     sgtz
+     drop
+     push 1
+     push 2
+     sgez
+     drop
+     ret
+- name: assigns
+  c: void assigns() { int a = 1; a += 2; a -= 3; a *= 4; a /= 5; a %= 6; }
+  expected: >-
+    _initc:
+     ret
+    assigns: ; func assigns
+     push 1
+     pop.sp 0 ; a
+     push.d.sp 0 ; a
+     push 2
+     add
+     pop.sp 0 ; a
+     drop
+     push.d.sp 0 ; a
+     push 3
+     sub
+     pop.sp 0 ; a
+     drop
+     push.d.sp 0 ; a
+     push 4
+     mul
+     pop.sp 0 ; a
+     drop
+     push.d.sp 0 ; a
+     push 5
+     div
+     pop.sp 0 ; a
+     drop
+     push.d.sp 0 ; a
+     push 6
+     mod
+     pop.sp 0 ; a
+     drop
+     ret
+- name: incdec
+  c: void incdec(int a) { a++; ++a; a--; --a; }
+  expected: >-
+    _initc:
+     ret
+    incdec: ; func incdec
+     pop.sp 0
+     push.d.sp 0 ; a
+     push 1
+     add
+     dup
+     pop.sp 0 ; a
+     drop
+     push.d.sp 0 ; a
+     dup
+     push 1
+     add
+     pop.sp 0 ; a
+     drop
+     push.d.sp 0 ; a
+     push -1
+     add
+     dup
+     pop.sp 0 ; a
+     drop
+     push.d.sp 0 ; a
+     dup
+     push -1
+     add
+     pop.sp 0 ; a
+     drop
+     ret

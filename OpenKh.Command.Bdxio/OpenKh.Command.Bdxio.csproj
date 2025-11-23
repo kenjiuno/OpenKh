@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -15,6 +15,7 @@
         <PackageReference Include="Antlr4.Runtime.Standard" Version="4.13.1" />
 
         <ProjectReference Include="../OpenKh.Common/OpenKh.Common.csproj" />
+        <ProjectReference Include="../OpenKh.Kh2Bdx/OpenKh.Kh2Bdx.csproj" />
     </ItemGroup>
 
     <ItemGroup>

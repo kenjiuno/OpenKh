@@ -1,4 +1,4 @@
-using OpenKh.Command.Bdxio.Utils;
+using OpenKh.Kh2Bdx.Utils;
 using OpenKh.Common;
 using OpenKh.Kh2;
 using OpenKh.Kh2.Messages;

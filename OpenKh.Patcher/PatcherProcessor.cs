@@ -1,6 +1,6 @@
 using OpenKh.Bbs;
-using OpenKh.Command.Bdxio.Models;
-using OpenKh.Command.Bdxio.Utils;
+using OpenKh.Kh2Bdx.Models;
+using OpenKh.Kh2Bdx.Utils;
 using OpenKh.Common;
 using OpenKh.Imaging;
 using OpenKh.Kh2;

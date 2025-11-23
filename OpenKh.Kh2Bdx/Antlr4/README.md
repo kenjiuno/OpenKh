@@ -18,7 +18,7 @@ Only `BdxScriptLexer.cs` and `BdxScriptParser.cs` are needed. Others are not nee
 
 Use Visual Studio Code `mike-lischke.vscode-antlr4` plugin.
 
-And write this at `OpenKh/OpenKh.Command.Bdxio/Antlr4/.vscode/launch.json`
+And write this at `OpenKh/OpenKh.Kh2Bdx/Antlr4/.vscode/launch.json`
 
 ```
 {

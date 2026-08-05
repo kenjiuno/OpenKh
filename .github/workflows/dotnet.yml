@@ -2,7 +2,7 @@ name: .NET
 
 on:
   push:
-    branches: [ "master", "fix-*" ]
+    branches: [ "master", "fix-*", "feature/user-friendly-experience" ]
   pull_request:
     branches: [ "master" ]
 

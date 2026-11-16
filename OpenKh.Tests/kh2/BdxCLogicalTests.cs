@@ -78,7 +78,7 @@ namespace OpenKh.Tests.kh2
                 "fwd.c"
             ).Bdscript.Replace("\r\n", "\n");
 
-            Assert.Contains("push 1\n jal 2, b\n", result);
+            Assert.Contains("push 1\n jal 4, b\n", result);
             Assert.DoesNotContain("drop", result);
         }
 
@@ -90,7 +90,7 @@ namespace OpenKh.Tests.kh2
                 "drop.c"
             ).Bdscript.Replace("\r\n", "\n");
 
-            Assert.Contains("jal 2, f\n drop", result);
+            Assert.Contains("jal 4, f\n drop", result);
         }
 
         [Fact]
@@ -276,19 +276,33 @@ namespace OpenKh.Tests.kh2
             Assert.Contains("pop.sp.d 0", s);
         }
 
+        [Theory]
+        [InlineData(0, 4)]
+        [InlineData(1, 4)]
+        [InlineData(2, 4)]
+        [InlineData(3, 8)]
+        [InlineData(6, 8)]
+        [InlineData(7, 12)]
+        public void FrameSizeIsAlignedTo16Bytes(int numLocals, int expectedJalCount)
+        {
+            var locals = string.Concat(Enumerable.Range(0, numLocals).Select(i => $"int v{i}; "));
+            var s = Compile($"void g() {{ }} void f() {{ {locals} g(); }}");
+            Assert.Contains($"jal {expectedJalCount}, g", s);
+        }
+
         [Fact]
         public void PointerStoreHiddenSlotCountedInFrame()
         {
-            var s = Compile("void g() { } void f(int *q) { *q = 1; g(); }");
-            // q (slot 0) + hidden slot (slot 1) + 2 system DWORDs
-            Assert.Contains("jal 4, g", s);
+            var s = Compile("void g() { } void f(int *q, int r) { *q = 1; g(); }");
+            // q, r + hidden save slot = 3 locals, + 2 system DWORDs = 5, aligned to 8
+            Assert.Contains("jal 8, g", s);
         }
 
         [Fact]
         public void NoHiddenSlotWithoutPointerStore()
         {
-            var s = Compile("void g() { } int f(int *q) { g(); return *q; }");
-            Assert.Contains("jal 3, g", s);
+            var s = Compile("void g() { } int f(int *q, int r) { g(); return *q; }");
+            Assert.Contains("jal 4, g", s);
         }
 
         [Theory]
@@ -493,28 +507,28 @@ namespace OpenKh.Tests.kh2
         public void ReturnOfCallResultPassesThePointerThrough()
         {
             var s = Compile("struct P { int x; }; struct P g() { struct P r; return r; } struct P f() { return g(); }");
-            Assert.Contains("f: ; func f\n jal 3, g\n ret\n", s);
+            Assert.Contains("f: ; func f\n jal 4, g\n ret\n", s);
         }
 
         [Fact]
         public void CallResultStoredInLocalIsJalThenMemcpySp()
         {
             var s = Compile("struct P { int x; int y; }; struct P g() { struct P r; return r; } void f() { struct P a; a = g(); }");
-            Assert.Contains(" jal 6, g\n memcpy.sp 8, 0 ; struct P\n", s);
+            Assert.Contains(" jal 8, g\n memcpy.sp 8, 0 ; struct P\n", s);
         }
 
         [Fact]
         public void UnusedStructResultIsDropped()
         {
             var s = Compile("struct P { int x; }; struct P g() { struct P r; return r; } void f() { g(); }");
-            Assert.Contains(" jal 3, g\n drop\n", s);
+            Assert.Contains(" jal 4, g\n drop\n", s);
         }
 
         [Fact]
         public void StructResultMemberAndArgumentAreCopiedFirst()
         {
             var s = Compile("struct P { int x; int y; }; struct P g() { struct P r; return r; } int h(struct P p) { return p.x; } int f() { return h(g()) + g().y; }");
-            Assert.Contains("jal 6, g\n memcpy.sp 8, 0 ; g()\n push.d.sp 4 ; g().y\n push.d.sp 0 ; g().x\n jal ", s);
+            Assert.Contains("jal 8, g\n memcpy.sp 8, 0 ; g()\n push.d.sp 4 ; g().y\n push.d.sp 0 ; g().x\n jal ", s);
         }
 
         [Theory]

@@ -105,7 +105,7 @@ namespace OpenKh.Command.Bdxio.Commands
                 // OBJ_INIT is called with `this` (YS::OBJ *) on tp, which the C program does not use.
                 // Run the global initializers, then discard `this` and return.
                 text.AppendLine("OBJ_INIT:");
-                text.AppendLine(" jal 2, _initc");
+                text.AppendLine($" jal {BdxCEncoder.InitFrameSize}, _initc");
                 text.AppendLine(" drop");
                 text.AppendLine(" ret");
             }

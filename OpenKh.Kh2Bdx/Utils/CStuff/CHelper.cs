@@ -24,6 +24,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         public const string FrameSizePlaceholder = "@@FRAMESIZE@@";
 
         /// <summary>
+        /// The frame size (DWORDs) passed to jal: locals + 2 system DWORDs (count, ret-ip), rounded up to a
+        /// multiple of 4 DWORDs (16 bytes). Every jal in real data has such a count (4 to 76), as sp is kept 16 bytes aligned.
+        /// </summary>
+        public static int FrameSizeOf(int numLocalDwords) => (numLocalDwords + 2 + 3) & ~3;
+
+        /// <summary>
         /// Placeholder replaced by the byte offset of a hidden per-function sp slot, which keeps
         /// the original sp[0] while a pointer store borrows it. Allocated only if used.
         /// </summary>

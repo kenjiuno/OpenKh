@@ -395,7 +395,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             codeSeg.WriteLine("ret");
 
-            // frame = locals (DWORDs) + 2 system DWORDs (count, ret-ip). Every jal in this function uses the same value.
+            // frame = locals + 2 system DWORDs (count, ret-ip), aligned to 16 bytes. Every jal in this function uses the same value.
             var body = codeSeg.ToString();
             if (body.Contains(CHelper.PointerSaveSlotPlaceholder))
             {
@@ -403,7 +403,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 body = body.Replace(CHelper.PointerSaveSlotPlaceholder, (4 * numLocalStackItemsAllocated).ToString());
                 numLocalStackItemsAllocated++;
             }
-            var frameSize = numLocalStackItemsAllocated + 2;
+            var frameSize = CHelper.FrameSizeOf(numLocalStackItemsAllocated);
             finalCodeSeg.WriteLine(
                 body.Replace(CHelper.FrameSizePlaceholder, frameSize.ToString())
             );

@@ -15,6 +15,9 @@ namespace OpenKh.Kh2Bdx.Utils
         /// <param name="WorkSize">Total bytes reserved in .bss (wp).</param>
         public record Result(string Bdscript, int WorkSize = 0);
 
+        /// <summary>Frame size (DWORDs) used to jal the `_initc` function: no locals, aligned to 16 bytes.</summary>
+        public static int InitFrameSize => CHelper.FrameSizeOf(0);
+
         private record VarDef(
             TypeDesc Type,
             int Pointers,
@@ -56,8 +59,8 @@ namespace OpenKh.Kh2Bdx.Utils
             {
                 writer.WriteLine("_initc:");
                 // _initc: global initializers, then ret. Called by the OBJ_INIT stub (see Bdxio encode-c --header).
-                // It has no locals: frame = 2 system DWORDs
-                writer.WriteLine(result.InitCodeSeg.ToString()?.Replace(CHelper.FrameSizePlaceholder, "2"));
+                // It has no locals: frame = 2 system DWORDs, aligned to 16 bytes
+                writer.WriteLine(result.InitCodeSeg.ToString()?.Replace(CHelper.FrameSizePlaceholder, CHelper.FrameSizeOf(0).ToString()));
                 writer.WriteLine(" ret");
             }
 

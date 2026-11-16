@@ -1222,6 +1222,28 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var assignmentExpression = args[x].assignmentExpression()
                     ?? throw new CompilerException(GetSourceRef(args[x]), "Braced initializer is not supported as an argument");
                 var arg = VisitAssignment(assignmentExpression);
+
+                var paramType = sig.ParamTypes?[x];
+                var argIsStruct = arg.Type.IsStruct && arg.Type.PointerDepth == 0;
+                var paramIsStruct = paramType != null && paramType.IsStruct && paramType.PointerDepth == 0;
+                if (argIsStruct || paramIsStruct)
+                {
+                    // struct by value: every member slot is pushed, last slot first, so that the callee's
+                    // `pop.sp 0, 4, ...` restores the slots in order (same as for scalar arguments).
+                    if (!argIsStruct || !paramIsStruct || arg.Type.BaseName != paramType!.BaseName)
+                    {
+                        throw new CompilerException(
+                            GetSourceRef(args[x]),
+                            $"Cannot convert argument {x + 1} of '{funcName}' from {arg.Type.Display} to {paramType?.Display ?? "a syscall parameter"}"
+                        );
+                    }
+                    foreach (var leaf in CHelper.StructLeaves(arg).Reverse())
+                    {
+                        lines.Add(leaf.Getter ?? throw new CompilerException(GetSourceRef(args[x]), "Argument member has no getter"));
+                    }
+                    continue;
+                }
+
                 if (arg.Getter == null)
                 {
                     throw new CompilerException(GetSourceRef(args[x]), "Argument must have a getter");

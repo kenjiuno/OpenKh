@@ -322,7 +322,17 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                 if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
                 {
-                    throw new CompilerException(GetSourceRef(functionDefinition), $"{funcName}: passing struct by value is not supported (use a pointer)");
+                    // the caller pushed every member slot; they are popped to sp[spIndex...] below
+                    argDict[argPair.Name] = StructVar.Build(
+                        argPair.Type,
+                        4 * spIndex,
+                        argPair.Name,
+                        getter: (off, path) => $"push.d.sp {off} ; {path}",
+                        setter: (off, path) => $"pop.sp {off} ; {path}",
+                        pointer: (off, path) => $"push.sp {off} ; &{path}"
+                    );
+                    numLocalStackItemsAllocated += StructVar.SlotsOf(argPair.Type);
+                    continue;
                 }
 
                 argDict[argPair.Name] = new VarRef(

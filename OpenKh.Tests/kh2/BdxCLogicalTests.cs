@@ -248,7 +248,6 @@ namespace OpenKh.Tests.kh2
 
         [Theory]
         [InlineData("struct S { int a; }; void f() { struct S s; s.zzz = 1; }")]
-        [InlineData("struct S { int a; }; void f(struct S s) { }")]
         [InlineData("struct S { int a; }; struct S f() { }")]
         [InlineData("void f() { struct Nope n; }")]
         [InlineData("void f(int x) { x.a = 1; }")]
@@ -423,6 +422,48 @@ namespace OpenKh.Tests.kh2
         [InlineData("void f(int n) { switch (n) { case 1.5: break; } }")]
         [InlineData("void f() { L: ; }")]
         public void BadSwitchUse(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
+        public void StructParameterIsPoppedIntoMemberSlots()
+        {
+            var s = Compile("struct P { int x; int y; }; int f(int k, struct P p) { return p.y; }");
+            // k, p.x, p.y are consecutive sp slots, popped in order
+            Assert.Contains("f: ; func f\n pop.sp 0\n pop.sp 4\n pop.sp 8\n", s);
+            Assert.Contains(" push.d.sp 8 ; p.y\n", s);
+        }
+
+        [Fact]
+        public void StructArgumentIsPushedLastSlotFirst()
+        {
+            var s = Compile("struct P { int x; int y; }; int g(int k, struct P p) { return k; } void f() { struct P a; g(5, a); }");
+            // last argument first, and inside a struct the last slot first, so the callee pops them in order
+            Assert.Contains(" push.d.sp 4 ; a.y\n push.d.sp 0 ; a.x\n push 5\n jal ", s);
+        }
+
+        [Fact]
+        public void NestedStructArgumentIsFlattened()
+        {
+            var s = Compile("struct P { int x; int y; }; struct L { struct P a; int t; }; void g(struct L l) { } void f(struct L l) { g(l); }");
+            Assert.Contains(" push.d.sp 8 ; l.t\n push.d.sp 4 ; l.a.y\n push.d.sp 0 ; l.a.x\n jal ", s);
+        }
+
+        [Fact]
+        public void StructArgumentThroughPointer()
+        {
+            var s = Compile("struct P { int x; int y; }; void g(struct P p) { } void f(struct P *q) { g(*q); }");
+            Assert.Contains("push.d.pop 4", s);
+            Assert.Contains("push.d.pop 0", s);
+        }
+
+        [Theory]
+        [InlineData("struct A { int x; }; struct B { int x; }; void g(struct A a) { } void f() { struct B b; g(b); }")]
+        [InlineData("struct A { int x; }; void g(struct A a) { } void f() { g(1); }")]
+        [InlineData("struct A { int x; }; void g(int a) { } void f() { struct A a; g(a); }")]
+        [InlineData("struct A { int x; }; void f() { struct A a; trap_puti(a, 1); }")]
+        public void BadStructArguments(string code)
         {
             Assert.ThrowsAny<Exception>(() => Compile(code));
         }

@@ -166,26 +166,31 @@ patterns:
      push.d.sp 0 ; a
      push 2
      add
+     dup
      pop.sp 0 ; a
      drop
      push.d.sp 0 ; a
      push 3
      sub
+     dup
      pop.sp 0 ; a
      drop
      push.d.sp 0 ; a
      push 4
      mul
+     dup
      pop.sp 0 ; a
      drop
      push.d.sp 0 ; a
      push 5
      div
+     dup
      pop.sp 0 ; a
      drop
      push.d.sp 0 ; a
      push 6
      mod
+     dup
      pop.sp 0 ; a
      drop
      ret

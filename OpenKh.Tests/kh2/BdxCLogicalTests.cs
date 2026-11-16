@@ -289,6 +289,14 @@ namespace OpenKh.Tests.kh2
             }
         }
 
+        [Fact]
+        public void AssignmentValueIsStoredValue()
+        {
+            var s = Compile("int f() { int a; int b; a = b = 3; return a; }");
+            // b = 3 leaves the stored value (dup) for the outer assignment to consume
+            Assert.Contains(" push 3\n dup\n pop.sp 4 ; b\n dup\n pop.sp 0 ; a\n drop\n", s);
+        }
+
         [Fact(Skip = "Private usage")]
         public void GenerateRegressionTestsExpected()
         {

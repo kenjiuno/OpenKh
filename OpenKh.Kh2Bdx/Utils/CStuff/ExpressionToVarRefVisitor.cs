@@ -98,16 +98,20 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var converter = CHelper.GetConverter(FromType: rval.Type, ToType: lval.Type)
                     ?? throw new CompilerException(GetSourceRef(assignmentExpression), $"Cannot convert from {rval.Type.Display} to {lval.Type.Display}");
 
-                if (assignmentOperator == null)
+                // The value of an assignment expression is the stored value: compute it,
+                // `dup` it, and pop one copy into the target. One copy stays on tp.
+                VarRef Store(string? prefix, string? lines)
                 {
-                    // simple assignment
-                    return CHelper.CombineGetterWithInstruction(
-                        lval: lval,
-                        lines: CHelper.JoinLines(
-                            converter,
-                            lval.Setter
-                        )
+                    return new VarRef(
+                        Type: lval.Type,
+                        Getter: CHelper.JoinLines(prefix, lines, "dup", lval.Setter),
+                        Setter: null
                     );
+                }
+
+                if (assignmentOperator == null || assignmentOperator.Assign() != null)
+                {
+                    return Store(rval.Getter, converter);
                 }
                 else
                 {
@@ -126,30 +130,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             );
                         }
 
-                        return CHelper.CombineGetterWithInstruction(
-                            lval: lval,
-                            lines: CHelper.JoinLines(
-                                rval.Getter,
-                                converter,
-                                lines,
-                                lval.Setter
-                            )
+                        return Store(
+                            CHelper.JoinLines(lval.Getter, rval.Getter),
+                            CHelper.JoinLines(converter, lines)
                         );
                     }
 
                     if (false)
                     { }
-                    else if (assignmentOperator.Assign() != null)
-                    {
-                        return CHelper.CombineGetterWithInstruction(
-                            lval: lval,
-                            lines: CHelper.JoinLines(
-                                rval.Getter,
-                                converter,
-                                lval.Setter
-                            )
-                        );
-                    }
                     else if (assignmentOperator.PlusAssign() != null)
                     {
                         return Apply("add", lval.Type.Math?.ApplyAdd);

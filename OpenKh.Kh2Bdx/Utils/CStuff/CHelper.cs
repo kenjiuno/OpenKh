@@ -237,6 +237,41 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
         }
 
+        /// <summary>
+        /// Code to copy the struct value `src` to `dst`, member by member (every leaf member is one 4-byte slot).
+        /// Leaf conversions are not needed because both sides must have the same struct type.
+        /// </summary>
+        internal string CopyStruct(VarRef dst, VarRef src, SourceRef sourceRef)
+        {
+            static bool IsStructValue(TypeDesc t) => t.IsStruct && t.PointerDepth == 0 && t.Members != null;
+
+            if (!IsStructValue(dst.Type) || !IsStructValue(src.Type) || dst.Type.BaseName != src.Type.BaseName)
+            {
+                throw new CompilerException(sourceRef, $"Cannot assign {src.Type.Display} to {dst.Type.Display}");
+            }
+
+            var lines = new List<string?>();
+
+            void Copy(VarRef to, VarRef from)
+            {
+                if (IsStructValue(to.Type))
+                {
+                    foreach (var member in to.Type.Members!)
+                    {
+                        Copy(to.Members![member.Name], from.Members![member.Name]);
+                    }
+                    return;
+                }
+
+                lines.Add(from.Getter ?? throw new CompilerException(sourceRef, "Source member has no getter"));
+                lines.Add(to.Setter ?? throw new CompilerException(sourceRef, $"Destination member of {dst.Type.Display} cannot be written"));
+            }
+
+            Copy(dst, src);
+
+            return JoinLines(lines.ToArray())!;
+        }
+
         internal VarRef MakePointer(VarRef lval, SourceRef sourceRef)
         {
             var newType = lval.Type.MakePointerType();

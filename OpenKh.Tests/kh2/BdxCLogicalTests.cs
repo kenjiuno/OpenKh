@@ -342,6 +342,49 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void StructAssignmentCopiesMembers()
+        {
+            var s = Compile("struct P { int x; int y; }; void f() { struct P a; struct P b; b = a; }");
+            Assert.Contains(" push.d.sp 0 ; a.x\n pop.sp 8 ; b.x\n push.d.sp 4 ; a.y\n pop.sp 12 ; b.y\n", s);
+            // no value is left on tp, so there is no dup / drop
+            Assert.DoesNotContain("dup", s);
+            Assert.DoesNotContain("drop", s);
+        }
+
+        [Fact]
+        public void StructInitializedByStructValue()
+        {
+            var s = Compile("struct P { int x; int y; }; void f() { struct P a; struct P b = a; }");
+            Assert.Contains(" push.d.sp 0 ; a.x\n pop.sp 8 ; b.x\n push.d.sp 4 ; a.y\n pop.sp 12 ; b.y\n", s);
+        }
+
+        [Fact]
+        public void StructAssignmentThroughPointers()
+        {
+            var s = Compile("struct P { int x; }; void f(struct P *p, struct P *q) { *p = *q; }");
+            Assert.Contains("push.d.pop 0", s);
+            Assert.Contains("pop.sp.d 0", s);
+        }
+
+        [Fact]
+        public void NestedStructAssignment()
+        {
+            var s = Compile("struct P { int x; int y; }; struct L { struct P a; int t; }; void f() { struct L l; struct P p; p = l.a; l.a = p; }");
+            Assert.Contains(" push.d.sp 0 ; l.a.x\n pop.sp 12 ; p.x\n push.d.sp 4 ; l.a.y\n pop.sp 16 ; p.y\n", s);
+            Assert.Contains(" push.d.sp 12 ; p.x\n pop.sp 0 ; l.a.x\n", s);
+        }
+
+        [Theory]
+        [InlineData("struct A { int x; }; struct B { int x; }; void f() { struct A a; struct B b; a = b; }")]
+        [InlineData("struct A { int x; }; void f() { struct A a; a = 1; }")]
+        [InlineData("struct A { int x; }; void f() { struct A a; struct A b; a += b; }")]
+        [InlineData("struct A { int x; }; void f() { struct A a; struct A b; struct A c; a = b = c; }")]
+        public void BadStructAssignments(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
         public void InitcIsGlobalInitializersThenRet()
         {
             var s = new BdxCEncoder().EncodeC("int g = 5; void main() { }", "i.c").Bdscript.Replace("\r\n", "\n");

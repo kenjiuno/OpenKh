@@ -140,6 +140,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         var rval = VisitInitializer(initializer);
                         if (rval != null)
                         {
+                            if (assignTo != null && IsStructValue(assignTo.Type))
+                            {
+                                // struct S b = a;
+                                (((varTypePair?.Static ?? false) ? writeHelper.InitCodeSeg : writeHelper.CodeSeg))
+                                    .WriteLine(CHelper.CopyStruct(assignTo, rval, GetSourceRef(initDeclarator)));
+                                continue;
+                            }
+
                             if (rval.Getter == null)
                             {
                                 throw new CompilerException(GetSourceRef(initializer), "Rvalue has no getter");
@@ -246,15 +254,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return;
             }
 
+            var rval = VisitInitializerClause(clause)!;
+
             if (IsStructValue(target.Type))
             {
-                throw new CompilerException(
-                    GetSourceRef(clause),
-                    $"Cannot initialize {target.Type.Display} from an expression; use {{ ... }}"
-                );
+                // struct member initialized by a struct value of the same type
+                writeTo.WriteLine(CHelper.CopyStruct(target, rval, GetSourceRef(clause)));
+                return;
             }
 
-            var rval = VisitInitializerClause(clause)!;
             var converter = CHelper.GetConverter(FromType: rval.Type, ToType: target.Type)
                 ?? throw new CompilerException(
                     GetSourceRef(clause),
@@ -330,7 +338,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var expr = ExpressionToVarRefVisitor
                     .VisitAssignment(assignmentExpression);
 
-                if (expr.Getter == null)
+                if (expr.Getter == null && !IsStructValue(expr.Type))
                 {
                     throw new CompilerException(GetSourceRef(assignmentExpression), "Need to produce getter");
                 }

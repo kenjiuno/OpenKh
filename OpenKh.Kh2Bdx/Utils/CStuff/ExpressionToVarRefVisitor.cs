@@ -85,6 +85,21 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                 var assignmentOperator = assignmentExpression.assignmentOperator();
 
+                if (lval.Type.IsStruct && lval.Type.PointerDepth == 0)
+                {
+                    // struct assignment: copy member by member. It has no value on tp (type void),
+                    // so it can be used as a statement only.
+                    if (assignmentOperator != null && assignmentOperator.Assign() == null)
+                    {
+                        throw new CompilerException(GetSourceRef(assignmentExpression), $"Operator is not supported for {lval.Type.Display}");
+                    }
+
+                    return new VarRef(
+                        Type: TypeDesc.Void,
+                        Getter: CHelper.CopyStruct(lval, rval, GetSourceRef(assignmentExpression))
+                    );
+                }
+
                 if (lval.Setter == null)
                 {
                     throw new CompilerException(GetSourceRef(assignmentExpression), "Left value must have a setter");

@@ -302,6 +302,46 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void GlobalStructInitializerGoesToInitc()
+        {
+            var s = Compile("struct P { int x; int y; }; struct P gp = { 3, 4 }; void f() { }");
+            Assert.Contains("_initc:\n push 3\n pop.wp gp.x\n push 4\n pop.wp gp.y\n ret\n", s);
+        }
+
+        [Fact]
+        public void PartialStructInitializerZeroFillsTheRest()
+        {
+            var s = Compile("struct P { int x; int y; int z; }; struct P g = { 9 }; void f() { }");
+            Assert.Contains("_initc:\n push 9\n pop.wp g.x\n push 0\n pop.wp g.y\n push 0\n pop.wp g.z\n ret\n", s);
+
+            var empty = Compile("struct P { int x; int y; }; void f() { struct P p = { }; }");
+            Assert.Contains(" push 0\n pop.sp 0 ; p.x\n push 0\n pop.sp 4 ; p.y\n", empty);
+        }
+
+        [Fact]
+        public void NestedStructInitializerAndConversions()
+        {
+            var s = Compile("struct P { int x; int y; }; struct L { struct P a; float f; int tail; }; void f() { struct L l = { { 1, 2 }, 3, }; }");
+            Assert.Contains(" push 1\n pop.sp 0 ; l.a.x\n push 2\n pop.sp 4 ; l.a.y\n push 3\n cvt.w.s\n pop.sp 8 ; l.f\n push 0\n pop.sp 12 ; l.tail\n", s);
+        }
+
+        [Fact]
+        public void ScalarBracedInitializer()
+        {
+            Assert.Contains("_initc:\n push 7\n pop.wp g\n ret\n", Compile("int g = { 7 }; void f() { }"));
+        }
+
+        [Theory]
+        [InlineData("struct P { int x; }; struct P p = { 1, 2 };")]
+        [InlineData("struct P { int x; }; struct P p = 1;")]
+        [InlineData("struct P { int x; }; struct P p = { { 1 } , 2 };")]
+        [InlineData("int a = { 1, 2 };")]
+        public void BadBracedInitializers(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code + " void f() { }"));
+        }
+
+        [Fact]
         public void InitcIsGlobalInitializersThenRet()
         {
             var s = new BdxCEncoder().EncodeC("int g = 5; void main() { }", "i.c").Bdscript.Replace("\r\n", "\n");

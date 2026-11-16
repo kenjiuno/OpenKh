@@ -119,6 +119,24 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     if (initDeclarator.initializer() is var initializer
                         && initializer != null)
                     {
+                        if (GetBracedInitList(initializer) is { } bracedInitList)
+                        {
+                            // struct S s = { 1, 2 };  /  int a = { 1 };
+                            if (assignTo == null)
+                            {
+                                throw new CompilerException(GetSourceRef(initDeclarator), "No lvalue to assign to");
+                            }
+
+                            WriteBracedInit(
+                                assignTo,
+                                bracedInitList,
+                                (varTypePair?.Static ?? false)
+                                    ? writeHelper.InitCodeSeg
+                                    : writeHelper.CodeSeg
+                            );
+                            continue;
+                        }
+
                         var rval = VisitInitializer(initializer);
                         if (rval != null)
                         {
@@ -162,6 +180,113 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
 
             throw new CompilerException(GetSourceRef(initDeclaratorList), "Unsupported init declarator list");
+        }
+
+        private static CPP14Parser.BracedInitListContext? GetBracedInitList(CPP14Parser.InitializerContext initializer)
+        {
+            var b = initializer.braceOrEqualInitializer();
+            return b?.bracedInitList() ?? b?.initializerClause()?.bracedInitList();
+        }
+
+        private static bool IsStructValue(TypeDesc type) => type.IsStruct && type.PointerDepth == 0;
+
+        /// <summary>
+        /// Initialize target with `{ a, b, ... }`. Elements follow the member order, nested braces initialize
+        /// nested structs, and members without an element are set to zero (as in C).
+        /// </summary>
+        private void WriteBracedInit(VarRef target, CPP14Parser.BracedInitListContext list, TextWriter writeTo)
+        {
+            var clauses = list.initializerList()?.initializerClause()
+                ?? Array.Empty<CPP14Parser.InitializerClauseContext>();
+
+            if (IsStructValue(target.Type))
+            {
+                var members = target.Type.Members ?? throw new CompilerException(GetSourceRef(list), $"Incomplete type {target.Type.Display}");
+
+                if (members.Count < clauses.Length)
+                {
+                    throw new CompilerException(GetSourceRef(clauses[members.Count]), $"Too many initializers for {target.Type.Display}");
+                }
+
+                for (int x = 0; x < members.Count; x++)
+                {
+                    var member = target.Members![members[x].Name];
+                    if (x < clauses.Length)
+                    {
+                        WriteInitClause(member, clauses[x], writeTo);
+                    }
+                    else
+                    {
+                        WriteZero(member, writeTo);
+                    }
+                }
+                return;
+            }
+
+            // scalar: `int a = { 1 };`
+            if (1 < clauses.Length)
+            {
+                throw new CompilerException(GetSourceRef(clauses[1]), "Too many initializers for a scalar");
+            }
+            if (clauses.Length == 0)
+            {
+                WriteZero(target, writeTo);
+            }
+            else
+            {
+                WriteInitClause(target, clauses[0], writeTo);
+            }
+        }
+
+        private void WriteInitClause(VarRef target, CPP14Parser.InitializerClauseContext clause, TextWriter writeTo)
+        {
+            if (clause.bracedInitList() is { } nested)
+            {
+                WriteBracedInit(target, nested, writeTo);
+                return;
+            }
+
+            if (IsStructValue(target.Type))
+            {
+                throw new CompilerException(
+                    GetSourceRef(clause),
+                    $"Cannot initialize {target.Type.Display} from an expression; use {{ ... }}"
+                );
+            }
+
+            var rval = VisitInitializerClause(clause)!;
+            var converter = CHelper.GetConverter(FromType: rval.Type, ToType: target.Type)
+                ?? throw new CompilerException(
+                    GetSourceRef(clause),
+                    $"No converter from {rval.Type.Display} to {target.Type.Display}"
+                );
+            writeTo.WriteLine(
+                CHelper.JoinLines(
+                    rval.Getter,
+                    converter,
+                    target.Setter ?? throw new CompilerException(GetSourceRef(clause), "Lvalue has no setter")
+                )
+            );
+        }
+
+        private void WriteZero(VarRef target, TextWriter writeTo)
+        {
+            if (IsStructValue(target.Type))
+            {
+                foreach (var member in target.Type.Members!)
+                {
+                    WriteZero(target.Members![member.Name], writeTo);
+                }
+                return;
+            }
+
+            // 0, 0.0f and a null pointer are all the zero word
+            writeTo.WriteLine(
+                CHelper.JoinLines(
+                    "push 0",
+                    target.Setter ?? throw new InvalidOperationException($"Cannot zero {target.Type.Display}: no setter")
+                )
+            );
         }
 
         private VarRef? VisitInitDeclarator(CPP14Parser.InitDeclaratorContext initDeclarator)

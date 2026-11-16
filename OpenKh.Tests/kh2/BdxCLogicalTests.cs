@@ -259,6 +259,56 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void PointerStoreBorrowsSp0AndRestoresIt()
+        {
+            var s = Compile("struct V { int x; int y; }; void f(struct V *p) { p->y = 3; }");
+            // value is dup'ed, sp[0] saved to a hidden slot, pointer put in sp[0], then restored
+            Assert.Contains(
+                " push 3\n dup\n push.d.sp 0 ; save sp[0]\n pop.sp 4\n push.d.sp 0 ; p\n pop.sp 0 ; pointer register\n pop.sp.d 4\n push.d.sp 4\n pop.sp 0 ; restore sp[0]\n drop\n",
+                s
+            );
+            // locals: p + hidden slot, so frame = 2 + 2 system DWORDs is used by jal; no placeholder may remain
+            Assert.DoesNotContain("@@", s);
+        }
+
+        [Fact]
+        public void PointerStoreThroughIntPointer()
+        {
+            var s = Compile("void f(int *q) { *q = 1; *q += 2; }");
+            Assert.Contains("pop.sp.d 0", s);
+        }
+
+        [Fact]
+        public void PointerStoreHiddenSlotCountedInFrame()
+        {
+            var s = Compile("void g() { } void f(int *q) { *q = 1; g(); }");
+            // q (slot 0) + hidden slot (slot 1) + 2 system DWORDs
+            Assert.Contains("jal 4, g", s);
+        }
+
+        [Fact]
+        public void NoHiddenSlotWithoutPointerStore()
+        {
+            var s = Compile("void g() { } int f(int *q) { g(); return *q; }");
+            Assert.Contains("jal 3, g", s);
+        }
+
+        [Theory]
+        [InlineData("void f(char *c) { *c = 1; }")]
+        [InlineData("void f(short *c) { *c = 1; }")]
+        public void PointerStoreOfSubWordIsRejected(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
+        public void WorkSizeCountsBss()
+        {
+            var r = new BdxCEncoder().EncodeC("int a; struct S { int x; int y; } s; void f() { }", "w.c");
+            Assert.Equal(12, r.WorkSize);
+        }
+
+        [Fact]
         public void CharLiteral()
         {
             Assert.Contains(" push 65\n", Compile("int f() { return 'A'; }"));

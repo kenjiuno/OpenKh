@@ -390,9 +390,16 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             codeSeg.WriteLine("ret");
 
             // frame = locals (DWORDs) + 2 system DWORDs (count, ret-ip). Every jal in this function uses the same value.
+            var body = codeSeg.ToString();
+            if (body.Contains(CHelper.PointerSaveSlotPlaceholder))
+            {
+                // hidden local used by pointer stores to save sp[0]
+                body = body.Replace(CHelper.PointerSaveSlotPlaceholder, (4 * numLocalStackItemsAllocated).ToString());
+                numLocalStackItemsAllocated++;
+            }
             var frameSize = numLocalStackItemsAllocated + 2;
             finalCodeSeg.WriteLine(
-                codeSeg.ToString().Replace(CHelper.FrameSizePlaceholder, frameSize.ToString())
+                body.Replace(CHelper.FrameSizePlaceholder, frameSize.ToString())
             );
         }
 

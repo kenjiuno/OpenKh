@@ -11,7 +11,9 @@ namespace OpenKh.Kh2Bdx.Utils
 {
     public class BdxCEncoder
     {
-        public record Result(string Bdscript);
+        /// <param name="Bdscript">Generated bdscript body (no YAML header).</param>
+        /// <param name="WorkSize">Total bytes reserved in .bss (wp).</param>
+        public record Result(string Bdscript, int WorkSize = 0);
 
         private record VarDef(
             TypeDesc Type,
@@ -72,7 +74,9 @@ namespace OpenKh.Kh2Bdx.Utils
             }
 
             return new Result(
-                Bdscript: Cleanup(writer.ToString()));
+                Bdscript: Cleanup(writer.ToString()),
+                WorkSize: System.Text.RegularExpressions.Regex.Matches(result.BssSeg.ToString() ?? "", @"\bresb\s+(\d+)")
+                    .Sum(it => int.Parse(it.Groups[1].Value)));
         }
 
         private string Cleanup(string body)

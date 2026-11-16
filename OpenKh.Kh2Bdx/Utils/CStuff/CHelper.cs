@@ -23,6 +23,32 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// </summary>
         public const string FrameSizePlaceholder = "@@FRAMESIZE@@";
 
+        /// <summary>
+        /// Placeholder replaced by the byte offset of a hidden per-function sp slot, which keeps
+        /// the original sp[0] while a pointer store borrows it. Allocated only if used.
+        /// </summary>
+        public const string PointerSaveSlotPlaceholder = "@@PTRSAVE@@";
+
+        /// <summary>
+        /// Store the value on top of tp to *(pointer + offset).
+        ///
+        /// The only store-through-pointer instruction is `pop.sp.d`, which takes the pointer from sp[0]
+        /// (*(*sp + imm16)). sp[0] normally holds a user variable, so it is saved and restored around the store.
+        /// The pointer expression is evaluated before sp[0] is overwritten.
+        /// </summary>
+        internal string PointerStore(string? pointerGetter, int offset)
+        {
+            return JoinLines(
+                "push.d.sp 0 ; save sp[0]",
+                $"pop.sp {PointerSaveSlotPlaceholder}",
+                pointerGetter,
+                "pop.sp 0 ; pointer register",
+                $"pop.sp.d {offset}",
+                $"push.d.sp {PointerSaveSlotPlaceholder}",
+                "pop.sp 0 ; restore sp[0]"
+            )!;
+        }
+
         private readonly IEnumerable<(TypeDesc FromType, TypeDesc ToType, string? Converter)> _knownConverters = GetKnownConverters()
             .ToImmutableArray();
 
@@ -162,14 +188,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                 if (newType.IsStruct)
                 {
-                    // *p of struct pointer: members are read through the pointer.
-                    // Writing through a pointer has no known instruction, so no setter.
+                    // *p of struct pointer: every member occupies a 4-byte slot (see StructVar),
+                    // read with push.d.pop and written with pop.sp.d.
                     return StructVar.Build(
                         newType,
                         0,
                         "",
                         getter: (off, _) => JoinLines(lval.Getter, $"push.d.pop {off}"),
-                        setter: null,
+                        setter: (off, _) => PointerStore(lval.Getter, off),
                         pointer: (off, _) => (off == 0)
                             ? lval.Getter!
                             : JoinLines(lval.Getter, $"push {off}", "add")
@@ -184,7 +210,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             $"push.d.pop 0 ; deref"
                         )
                         : null,
-                    Setter: null,
+                    // pop.sp.d stores a whole word, so only 4-byte pointees are writable
+                    // (a store to char/short would clobber the neighbouring bytes).
+                    Setter: (size == 4)
+                        ? PointerStore(lval.Getter, 0)
+                        : null,
                     GetPointer: lval.Getter
                 );
             }
@@ -201,7 +231,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         lval.Getter,
                         $"push.d.pop 0 ; deref"
                     ),
-                    Setter: null,
+                    Setter: PointerStore(lval.Getter, 0), // pointee is a pointer: 4 bytes
                     GetPointer: lval.Getter
                 );
             }

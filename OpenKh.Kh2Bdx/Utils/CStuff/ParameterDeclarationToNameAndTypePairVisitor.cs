@@ -65,15 +65,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             if (pointerDeclarator.noPointerDeclarator() is var noPointerDeclarator
                 && noPointerDeclarator != null)
             {
-                var argType = ReduceNoPointerDeclarator(noPointerDeclarator, baseType);
-
-                var cx = pointerDeclarator.pointerOperator().Length;
-                for (int x = 0; x < cx; x++)
-                {
-                    argType = argType with { Type = argType.Type.MakePointerType() };
-                }
-
-                return argType;
+                // pointer operators were already applied to baseType above
+                return ReduceNoPointerDeclarator(noPointerDeclarator, baseType);
             }
 
             throw new CompilerException(GetSourceRef(pointerDeclarator), "Unsupported pointer declarator");

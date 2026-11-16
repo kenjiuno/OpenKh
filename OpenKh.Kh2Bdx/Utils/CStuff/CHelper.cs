@@ -13,7 +13,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         Func<ArgPair, SourceRef, VarRef> DeclareVar,
         Func<ArgPair, SourceRef, VarRef> DeclareStaticVar,
         Func<int, int> AllocateStackItems,
-        Func<string, FuncSig?>? GetFunc = null
+        Func<string, FuncSig?>? GetFunc = null,
+        Func<byte[], string>? AddStringLiteral = null
         )
     {
         /// <summary>

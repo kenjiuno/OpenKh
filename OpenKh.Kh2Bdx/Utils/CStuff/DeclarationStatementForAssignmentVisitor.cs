@@ -36,7 +36,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             throw new CompilerException(GetSourceRef(blockDeclaration), "Unsupported block declaration");
         }
 
-        private void VisitSimpleDeclaration(CPP14Parser.SimpleDeclarationContext simpleDeclaration, WriteHelper writeHelper)
+        internal void VisitSimpleDeclaration(CPP14Parser.SimpleDeclarationContext simpleDeclaration, WriteHelper writeHelper)
         {
             var handled = false;
 

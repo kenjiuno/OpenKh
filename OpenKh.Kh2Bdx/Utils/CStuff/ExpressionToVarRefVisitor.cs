@@ -1203,12 +1203,101 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             );
         }
 
+        /// <summary>
+        /// Decode "text" or 'c' (quotes included) into bytes. Supports \n \t \r \0 \a \b \f \v \\ \' \" \? \xHH and octal.
+        /// </summary>
+        private static byte[] UnescapeStringLiteral(string text, SourceRef sourceRef)
+        {
+            var body = text.Substring(1, text.Length - 2);
+            var result = new List<byte>();
+            for (int x = 0; x < body.Length; x++)
+            {
+                var c = body[x];
+                if (c != '\\')
+                {
+                    var chars = (char.IsHighSurrogate(c) && x + 1 < body.Length)
+                        ? body.Substring(x++, 2)
+                        : c.ToString();
+                    result.AddRange(Encoding.UTF8.GetBytes(chars));
+                    continue;
+                }
+                if (++x >= body.Length)
+                {
+                    throw new CompilerException(sourceRef, "Invalid escape sequence");
+                }
+                c = body[x];
+                switch (c)
+                {
+                    case 'n': result.Add(10); break;
+                    case 't': result.Add(9); break;
+                    case 'r': result.Add(13); break;
+                    case 'a': result.Add(7); break;
+                    case 'b': result.Add(8); break;
+                    case 'f': result.Add(12); break;
+                    case 'v': result.Add(11); break;
+                    case '\\': case '\'': case '"': case '?': result.Add((byte)c); break;
+                    case 'x':
+                        {
+                            int v = 0, n = 0;
+                            while (x + 1 < body.Length && Uri.IsHexDigit(body[x + 1]))
+                            {
+                                v = v * 16 + Convert.ToInt32(body[++x].ToString(), 16);
+                                n++;
+                            }
+                            if (n == 0) throw new CompilerException(sourceRef, "Invalid \\x escape sequence");
+                            result.Add((byte)v);
+                            break;
+                        }
+                    case >= '0' and <= '7':
+                        {
+                            int v = c - '0';
+                            for (int n = 1; n < 3 && x + 1 < body.Length && body[x + 1] is >= '0' and <= '7'; n++)
+                            {
+                                v = v * 8 + (body[++x] - '0');
+                            }
+                            result.Add((byte)v);
+                            break;
+                        }
+                    default:
+                        throw new CompilerException(sourceRef, $"Unsupported escape sequence \\{c}");
+                }
+            }
+            return result.ToArray();
+        }
+
         private VarRef VisitPrimaryExpression(PrimaryExpressionContext primaryExpression)
         {
+            if (primaryExpression.literal() is var strLiterals
+                && strLiterals != null
+                && 1 <= strLiterals.Length
+                && strLiterals.All(it => it.StringLiteral() != null))
+            {
+                // "abc" "def" are concatenated. Placed in bd, the value is its address (char *).
+                var bytes = strLiterals
+                    .SelectMany(it => UnescapeStringLiteral(it.StringLiteral().GetText(), GetSourceRef(it)))
+                    .ToArray();
+                var label = CHelper.AddStringLiteral?.Invoke(bytes)
+                    ?? throw new CompilerException(GetSourceRef(primaryExpression), "String literal is not available here");
+                return new VarRef(
+                    Type: TypeDesc.Int8.MakePointerType(),
+                    Getter: $"push.bd {label}"
+                );
+            }
+
             if (primaryExpression.literal() is var literalList
                 && literalList != null
                 && literalList.Length == 1)
             {
+                if (literalList[0].CharacterLiteral() is var charLiteral && charLiteral != null)
+                {
+                    var charBytes = UnescapeStringLiteral(charLiteral.GetText(), GetSourceRef(literalList[0]));
+                    if (charBytes.Length != 1)
+                    {
+                        throw new CompilerException(GetSourceRef(literalList[0]), "Character literal must be a single byte");
+                    }
+                    return new VarRef(Type: TypeDesc.Int32, Getter: $"push {charBytes[0]}");
+                }
+
                 var literal = literalList[0];
                 if (false)
                 { }

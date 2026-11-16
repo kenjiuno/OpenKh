@@ -11,6 +11,9 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         TextWriter InitCodeSeg,
         int ExpectedOuts,
         Func<Func<string, string>> NextUniqueLabelGenerator,
-        CHelper CHelper
+        CHelper CHelper,
+        LoopLabels? Loop = null
         );
+
+    internal record LoopLabels(string Break, string Continue);
 }

@@ -40,6 +40,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             var globalVarRefDict = new Dictionary<string, VarRef>();
 
             // built-in traps first, then functions defined in this source (which may shadow traps).
+            var stringLabels = new Dictionary<string, string>();
             var funcDict = new Dictionary<string, FuncSig>();
             foreach (var trap in BdxTraps.GetTraps())
             {
@@ -70,6 +71,18 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             var cHelper = new CHelper(
                 GetFunc: name => funcDict.TryGetValue(name, out var sig) ? sig : null,
+                AddStringLiteral: bytes =>
+                {
+                    var key = Convert.ToHexString(bytes);
+                    if (!stringLabels.TryGetValue(key, out var label))
+                    {
+                        label = $"__str{stringLabels.Count + 1}";
+                        stringLabels[key] = label;
+                        staticDataSeg.WriteLine($"{label}:");
+                        staticDataSeg.WriteLine($" db {FormatDbOperands(bytes)}");
+                    }
+                    return label;
+                },
                 GetVar: varName => globalVarRefDict.TryGetValue(varName, out VarRef? expr)
                     ? expr
                     : null,
@@ -151,6 +164,44 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 StaticDataSeg: staticDataSeg,
                 BssSeg: bssSeg
             );
+        }
+
+        /// <summary>
+        /// bytes + NUL terminator (+ padding to 2 bytes alignment) as operands of db.
+        /// Printable ASCII is quoted (bdscript has no escape in quotes), others are numbers.
+        /// </summary>
+        private static string FormatDbOperands(byte[] bytes)
+        {
+            var all = bytes.Concat(new byte[] { 0 }).ToList();
+            if (all.Count % 2 != 0)
+            {
+                all.Add(0);
+            }
+
+            var parts = new List<string>();
+            var run = new StringBuilder();
+            void Flush()
+            {
+                if (run.Length != 0)
+                {
+                    parts.Add($"'{run}'");
+                    run.Clear();
+                }
+            }
+            foreach (var b in all)
+            {
+                if (32 <= b && b < 127 && b != '\'')
+                {
+                    run.Append((char)b);
+                }
+                else
+                {
+                    Flush();
+                    parts.Add(b.ToString());
+                }
+            }
+            Flush();
+            return string.Join(",", parts);
         }
 
         private (string Name, TypeDesc RetType, ArgPair[] Args) GetSignature(
@@ -325,7 +376,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 },
                 DeclareStaticVar: parent.DeclareStaticVar,
                 AllocateStackItems: parent.AllocateStackItems,
-                GetFunc: parent.GetFunc
+                GetFunc: parent.GetFunc,
+                AddStringLiteral: parent.AddStringLiteral
             );
         }
 
@@ -421,6 +473,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 }
             }
 
+            if (statement.iterationStatement() is var iterationStatement
+                && iterationStatement != null)
+            {
+                WriteIterationStatement(iterationStatement, writeHelper);
+                return;
+            }
+
             if (statement.jumpStatement() is var jumpStatement
                 && jumpStatement != null)
             {
@@ -463,26 +522,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 // no type at all (a valid declaration needs one). Re-parse it as an expression.
                 if (IsDeclarationWithoutType(declarationStatement))
                 {
-                    var text = statement.Start.InputStream.GetText(
-                        new Antlr4.Runtime.Misc.Interval(statement.Start.StartIndex, statement.Stop.StopIndex)
-                    );
-                    var stream = CharStreams.fromString(text.TrimEnd().TrimEnd(';'));
-                    ((CodePointCharStream)stream).name = statement.Start.InputStream.SourceName;
-                    var parser = new CPP14Parser(
-                        new CommonTokenStream(new CPP14Lexer(stream, TextWriter.Null, TextWriter.Null)),
-                        TextWriter.Null,
-                        TextWriter.Null
-                    );
-                    var reparsed = new ExpressionToVarRefVisitor(GetSourceRef, cHelper, ReduceTypeDesc1)
-                        .VisitExpression(parser.expression());
-                    if (reparsed.Getter != null)
-                    {
-                        codeSeg.WriteLine(reparsed.Getter);
-                        if (reparsed.Type != TypeDesc.Void)
-                        {
-                            codeSeg.WriteLine("drop");
-                        }
-                    }
+                    WriteReparsedExpressionStatement(statement, writeHelper);
                     return;
                 }
 
@@ -497,6 +537,138 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
 
             throw new CompilerException(GetSourceRef(statement), "Unsupported statement");
+        }
+
+        private void WriteReparsedExpressionStatement(ParserRuleContext context, WriteHelper writeHelper)
+        {
+            var text = context.Start.InputStream.GetText(
+                new Antlr4.Runtime.Misc.Interval(context.Start.StartIndex, context.Stop.StopIndex)
+            );
+            var stream = CharStreams.fromString(text.TrimEnd().TrimEnd(';'));
+            ((CodePointCharStream)stream).name = context.Start.InputStream.SourceName;
+            var parser = new CPP14Parser(
+                new CommonTokenStream(new CPP14Lexer(stream, TextWriter.Null, TextWriter.Null)),
+                TextWriter.Null,
+                TextWriter.Null
+            );
+            WriteExpressionStatement(
+                new ExpressionToVarRefVisitor(GetSourceRef, writeHelper.CHelper, ReduceTypeDesc1)
+                    .VisitExpression(parser.expression()),
+                writeHelper
+            );
+        }
+
+        /// <summary>Evaluate and discard.</summary>
+        private static void WriteExpressionStatement(VarRef expr, WriteHelper writeHelper)
+        {
+            if (expr.Getter != null)
+            {
+                writeHelper.CodeSeg.WriteLine(expr.Getter);
+                if (expr.Type != TypeDesc.Void)
+                {
+                    writeHelper.CodeSeg.WriteLine("drop");
+                }
+            }
+        }
+
+        private void WriteIterationStatement(CPP14Parser.IterationStatementContext it, WriteHelper writeHelper)
+        {
+            var codeSeg = writeHelper.CodeSeg;
+            var labelGen = writeHelper.NextUniqueLabelGenerator();
+            var topLabel = labelGen("loop");
+            var contLabel = labelGen("continue");
+            var endLabel = labelGen("endloop");
+            var inner = writeHelper with { Loop = new LoopLabels(Break: endLabel, Continue: contLabel) };
+
+            string Cond(CPP14Parser.ConditionContext condition, WriteHelper wh)
+            {
+                var expr = new ExpressionToVarRefVisitor(GetSourceRef, wh.CHelper, ReduceTypeDesc1).Visit(condition);
+                return expr.Getter ?? throw new CompilerException(GetSourceRef(condition), "Need to produce getter");
+            }
+
+            if (it.Do() == null && it.While() != null)
+            {
+                // while (cond) body
+                codeSeg.WriteLine($"{topLabel}:");
+                codeSeg.WriteLine($"{contLabel}:");
+                codeSeg.WriteLine(Cond(it.condition(), writeHelper));
+                codeSeg.WriteLine($"jz {endLabel}");
+                WriteStatement(it.statement(), inner);
+                codeSeg.WriteLine($"b {topLabel}");
+                codeSeg.WriteLine($"{endLabel}:");
+                return;
+            }
+
+            if (it.Do() != null)
+            {
+                // do body while (cond);
+                codeSeg.WriteLine($"{topLabel}:");
+                WriteStatement(it.statement(), inner);
+                codeSeg.WriteLine($"{contLabel}:");
+                var expr = new ExpressionToVarRefVisitor(GetSourceRef, writeHelper.CHelper, ReduceTypeDesc1)
+                    .VisitExpression(it.expression());
+                codeSeg.WriteLine(expr.Getter ?? throw new CompilerException(GetSourceRef(it.expression()), "Need to produce getter"));
+                codeSeg.WriteLine($"jnz {topLabel}");
+                codeSeg.WriteLine($"{endLabel}:");
+                return;
+            }
+
+            if (it.For() != null && it.forInitStatement() is var forInit && forInit != null)
+            {
+                // for (init; cond; step) body ; variables declared in init live in their own scope
+                var scoped = writeHelper with { CHelper = NewChildScope(writeHelper.CHelper) };
+                inner = inner with { CHelper = scoped.CHelper };
+
+                if (forInit.simpleDeclaration() is var simpleDeclaration && simpleDeclaration != null)
+                {
+                    if (simpleDeclaration.declSpecifierSeq() == null && simpleDeclaration.initDeclaratorList() == null)
+                    {
+                        // empty init
+                    }
+                    else if (simpleDeclaration.declSpecifierSeq() == null)
+                    {
+                        WriteReparsedExpressionStatement(simpleDeclaration, scoped);
+                    }
+                    else
+                    {
+                        new DeclarationStatementForAssignmentVisitor(
+                            GetSourceRef,
+                            scoped.CHelper,
+                            ReduceTypeDesc1.Reduce,
+                            new ExpressionToVarRefVisitor(GetSourceRef, scoped.CHelper, ReduceTypeDesc1)
+                        )
+                            .VisitSimpleDeclaration(simpleDeclaration, scoped);
+                    }
+                }
+                else if (forInit.expressionStatement()?.expression() is var initExpression && initExpression != null)
+                {
+                    WriteExpressionStatement(
+                        new ExpressionToVarRefVisitor(GetSourceRef, scoped.CHelper, ReduceTypeDesc1).VisitExpression(initExpression),
+                        scoped
+                    );
+                }
+
+                codeSeg.WriteLine($"{topLabel}:");
+                if (it.condition() is var condition && condition != null)
+                {
+                    codeSeg.WriteLine(Cond(condition, scoped));
+                    codeSeg.WriteLine($"jz {endLabel}");
+                }
+                WriteStatement(it.statement(), inner);
+                codeSeg.WriteLine($"{contLabel}:");
+                if (it.expression() is var step && step != null)
+                {
+                    WriteExpressionStatement(
+                        new ExpressionToVarRefVisitor(GetSourceRef, scoped.CHelper, ReduceTypeDesc1).VisitExpression(step),
+                        scoped
+                    );
+                }
+                codeSeg.WriteLine($"b {topLabel}");
+                codeSeg.WriteLine($"{endLabel}:");
+                return;
+            }
+
+            throw new CompilerException(GetSourceRef(it), "Unsupported iteration statement");
         }
 
         private static bool IsDeclarationWithoutType(CPP14Parser.DeclarationStatementContext declarationStatement)
@@ -547,6 +719,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 }
 
                 codeSeg.WriteLine("ret");
+                return;
+            }
+
+            else if (jumpStatement.Break() != null || jumpStatement.Continue() != null)
+            {
+                var isBreak = jumpStatement.Break() != null;
+                var loop = writeHelper.Loop
+                    ?? throw new CompilerException(GetSourceRef(jumpStatement), isBreak ? "break outside of a loop" : "continue outside of a loop");
+                codeSeg.WriteLine($"b {(isBreak ? loop.Break : loop.Continue)}");
                 return;
             }
 

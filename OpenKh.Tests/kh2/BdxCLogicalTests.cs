@@ -105,6 +105,76 @@ namespace OpenKh.Tests.kh2
             Assert.Contains("syscall 0, 16 ; trap_random_get\n", result);
         }
 
+        private static string Compile(string code) =>
+            new BdxCEncoder().EncodeC(code, "t.c").Bdscript.Replace("\r\n", "\n");
+
+        [Fact]
+        public void WhileLoopWithBreakAndContinue()
+        {
+            var s = Compile("void f(int a) { while (a) { if (a == 1) { break; } if (a == 2) { continue; } a--; } }");
+            Assert.Contains("__f1loop:\n__f1continue:", s);
+            Assert.Contains(" jz __f1endloop", s);
+            Assert.Contains(" b __f1endloop", s);
+            Assert.Contains(" b __f1continue", s);
+            Assert.Contains(" b __f1loop\n__f1endloop:", s);
+        }
+
+        [Fact]
+        public void DoWhileLoop()
+        {
+            var s = Compile("void f(int a) { do { a--; } while (a); }");
+            Assert.Contains("loop:", s);
+            Assert.Contains("continue:", s);
+            Assert.Contains(" jnz __f1loop\n__f1endloop:", s);
+        }
+
+        [Fact]
+        public void ForLoopWithDeclaration()
+        {
+            var s = Compile("int f() { int sum = 0; for (int i = 0; i < 10; i++) { sum += i; } return sum; }");
+            Assert.Contains("loop:", s);
+            Assert.Contains("continue:", s);
+            Assert.Contains(" b __f1loop\n__f1endloop:", s);
+        }
+
+        [Fact]
+        public void ForLoopWithCallsAndEmptyParts()
+        {
+            Compile("void g() { } void f() { for (;;) { break; } for (g(); ; g()) { break; } }");
+        }
+
+        [Theory]
+        [InlineData("void f() { break; }")]
+        [InlineData("void f() { continue; }")]
+        public void BreakOutsideLoopFails(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
+        public void StringLiteralBecomesBdData()
+        {
+            var s = Compile("void f() { char *p = \"Hi\\n\"; char *q = \"Hi\\n\"; trap_puts(\"x\"); }");
+            Assert.Contains(" push.bd __str1\n", s);
+            Assert.Contains("__str1:\n db 'Hi',10,0\n", s);
+            Assert.Contains("__str2:\n db 'x',0", s);
+            Assert.DoesNotContain("__str3", s);
+        }
+
+        [Fact]
+        public void StringLiteralOddLengthIsPadded()
+        {
+            var s = Compile("void f() { char *p = \"abc\"; char *q = \"it's\"; }");
+            Assert.Contains(" db 'abc',0\n", s);
+            Assert.Contains(" db 'it',39,'s',0,0", s);
+        }
+
+        [Fact]
+        public void CharLiteral()
+        {
+            Assert.Contains(" push 65\n", Compile("int f() { return 'A'; }"));
+        }
+
         [Theory]
         [InlineData("void f() { unknown(); }")]
         [InlineData("int g(int a) { return a; } void f() { g(); }")]

@@ -13,6 +13,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         Func<Func<string, string>> NextUniqueLabelGenerator,
         CHelper CHelper,
         LoopLabels? Loop = null,
+        TypeDesc? RetType = null,
         IReadOnlyDictionary<CPP14Parser.LabeledStatementContext, string>? CaseLabels = null
         );
 

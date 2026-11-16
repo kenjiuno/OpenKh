@@ -1119,9 +1119,23 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     throw new CompilerException(GetSourceRef(postfixExpression), $"Left of . must be a struct, but {obj.Type.Display}");
                 }
 
-                return obj.Members.TryGetValue(memberName, out var member)
-                    ? member
+                var member = obj.Members.TryGetValue(memberName, out var found)
+                    ? found
                     : throw new CompilerException(GetSourceRef(postfixExpression), $"{obj.Type.Display} has no member '{memberName}'");
+
+                if (obj.Prelude != null)
+                {
+                    // member of a returned struct, e.g. f().x: run the call first. It is an rvalue.
+                    return member.Members != null
+                        ? member with { Prelude = obj.Prelude }
+                        : new VarRef(
+                            Type: member.Type,
+                            Getter: CHelper.JoinLines(obj.Prelude, member.Getter),
+                            GetPointer: null
+                        );
+                }
+
+                return member;
             }
 
             if (postfixExpression.postfixExpression() is var innerPostfixExpression
@@ -1237,6 +1251,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             $"Cannot convert argument {x + 1} of '{funcName}' from {arg.Type.Display} to {paramType?.Display ?? "a syscall parameter"}"
                         );
                     }
+                    lines.Add(arg.Prelude); // the argument is the result of a call returning a struct
                     foreach (var leaf in CHelper.StructLeaves(arg).Reverse())
                     {
                         lines.Add(leaf.Getter ?? throw new CompilerException(GetSourceRef(args[x]), "Argument member has no getter"));
@@ -1268,6 +1283,28 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             else
             {
                 lines.Add($"jal {CHelper.FrameSizePlaceholder}, {funcName}");
+            }
+
+            if (sig.RetType.IsStruct && sig.RetType.PointerDepth == 0)
+            {
+                // A struct is returned as one pointer on tp, pointing into the dead frame of the callee.
+                // It stays valid only until the next jal, so it is copied right after the call.
+                var call = CHelper.JoinLines(lines.ToArray())!;
+                var slots = StructVar.SlotsOf(sig.RetType);
+                var tempOffset = 4 * CHelper.AllocateStackItems(slots);
+                var result = StructVar.Build(
+                    sig.RetType,
+                    tempOffset,
+                    $"{funcName}()",
+                    getter: (off, path) => $"push.d.sp {off} ; {path}",
+                    setter: null,
+                    pointer: (off, path) => $"push.sp {off} ; &{path}"
+                );
+                return result with
+                {
+                    Prelude = CHelper.JoinLines(call, $"memcpy.sp {4 * slots}, {tempOffset} ; {funcName}()"),
+                    DiscardCode = call,
+                };
             }
 
             return new VarRef(

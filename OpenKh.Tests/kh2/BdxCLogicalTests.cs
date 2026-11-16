@@ -248,7 +248,6 @@ namespace OpenKh.Tests.kh2
 
         [Theory]
         [InlineData("struct S { int a; }; void f() { struct S s; s.zzz = 1; }")]
-        [InlineData("struct S { int a; }; struct S f() { }")]
         [InlineData("void f() { struct Nope n; }")]
         [InlineData("void f(int x) { x.a = 1; }")]
         [InlineData("struct S { int a; }; void f(struct S *p) { p.a = 1; }")]
@@ -464,6 +463,66 @@ namespace OpenKh.Tests.kh2
         [InlineData("struct A { int x; }; void g(int a) { } void f() { struct A a; g(a); }")]
         [InlineData("struct A { int x; }; void f() { struct A a; trap_puti(a, 1); }")]
         public void BadStructArguments(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
+        public void ReturnOfLocalStructPushesItsAddress()
+        {
+            var s = Compile("struct P { int x; int y; }; struct P f() { struct P r; r.x = 1; return r; }");
+            // one pointer into the callee's own (dead) frame
+            Assert.Contains(" push.sp 0 ; &r\n ret\n", s);
+        }
+
+        [Fact]
+        public void ReturnOfParameterStructPushesItsAddress()
+        {
+            var s = Compile("struct P { int x; int y; }; struct P f(int k, struct P p) { return p; }");
+            Assert.Contains(" push.sp 4 ; &p\n ret\n", s);
+        }
+
+        [Fact]
+        public void ReturnOfGlobalStructIsCopiedToHiddenLocal()
+        {
+            var s = Compile("struct P { int x; int y; }; struct P g; struct P f() { return g; }");
+            Assert.Contains(" push.d.wp g.x\n pop.sp 0 ; (return value).x\n push.d.wp g.y\n pop.sp 4 ; (return value).y\n push.sp 0 ; (return value)\n ret\n", s);
+        }
+
+        [Fact]
+        public void ReturnOfCallResultPassesThePointerThrough()
+        {
+            var s = Compile("struct P { int x; }; struct P g() { struct P r; return r; } struct P f() { return g(); }");
+            Assert.Contains("f: ; func f\n jal 3, g\n ret\n", s);
+        }
+
+        [Fact]
+        public void CallResultStoredInLocalIsJalThenMemcpySp()
+        {
+            var s = Compile("struct P { int x; int y; }; struct P g() { struct P r; return r; } void f() { struct P a; a = g(); }");
+            Assert.Contains(" jal 6, g\n memcpy.sp 8, 0 ; struct P\n", s);
+        }
+
+        [Fact]
+        public void UnusedStructResultIsDropped()
+        {
+            var s = Compile("struct P { int x; }; struct P g() { struct P r; return r; } void f() { g(); }");
+            Assert.Contains(" jal 3, g\n drop\n", s);
+        }
+
+        [Fact]
+        public void StructResultMemberAndArgumentAreCopiedFirst()
+        {
+            var s = Compile("struct P { int x; int y; }; struct P g() { struct P r; return r; } int h(struct P p) { return p.x; } int f() { return h(g()) + g().y; }");
+            Assert.Contains("jal 6, g\n memcpy.sp 8, 0 ; g()\n push.d.sp 4 ; g().y\n push.d.sp 0 ; g().x\n jal ", s);
+        }
+
+        [Theory]
+        [InlineData("struct A { int x; }; struct B { int x; }; struct A f() { struct B b; return b; }")]
+        [InlineData("struct A { int x; }; struct A f() { return 1; }")]
+        [InlineData("struct A { int x; }; int f() { struct A a; return a; }")]
+        [InlineData("struct A { int x; }; void f() { struct A a; a = 1 + f2(); } struct A f2() { struct A a; return a; }")]
+        public void BadStructReturns(string code)
         {
             Assert.ThrowsAny<Exception>(() => Compile(code));
         }

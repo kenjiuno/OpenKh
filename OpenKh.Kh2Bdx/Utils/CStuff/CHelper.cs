@@ -252,6 +252,16 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             var lines = new List<string?>();
 
+            if (src.DiscardCode != null
+                && dst.GetPointer is { } dstPointer
+                && System.Text.RegularExpressions.Regex.Match(dstPointer, @"^push\.sp (\d+)( ;.*)?$") is { Success: true } local)
+            {
+                // call returning a struct, stored straight into a local: jal, then memcpy.sp from the returned pointer
+                return JoinLines(src.DiscardCode, $"memcpy.sp {dst.Type.Size}, {local.Groups[1].Value} ; {dst.Type.Display}")!;
+            }
+
+            lines.Add(src.Prelude);
+
             void Copy(VarRef to, VarRef from)
             {
                 if (IsStructValue(to.Type))

@@ -292,11 +292,6 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 .Select(parameterDeclarationToNameAndTypePairVisitor.Reduce)
                 .ToArray();
 
-            if (retType.IsStruct && retType.PointerDepth == 0)
-            {
-                throw new CompilerException(GetSourceRef(functionDefinition), $"{funcName}: returning struct by value is not supported (use a pointer)");
-            }
-
             return (funcName, retType, argPairs);
         }
 
@@ -383,6 +378,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         CodeSeg: codeSeg,
                         InitCodeSeg: initCodeSeg,
                         ExpectedOuts: (retType != TypeDesc.Void) ? 1 : 0,
+                        RetType: retType,
                         NextUniqueLabelGenerator: () =>
                         {
                             labelIndex += 1;
@@ -614,14 +610,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     var expr = new ExpressionToVarRefVisitor(GetSourceRef, cHelper, ReduceTypeDesc1)
                         .VisitExpression(expression);
 
-                    if (expr.Getter != null)
-                    {
-                        codeSeg.WriteLine(expr.Getter);
-                        if (expr.Type != TypeDesc.Void)
-                        {
-                            codeSeg.WriteLine("drop");
-                        }
-                    }
+                    WriteExpressionStatement(expr, writeHelper);
                 }
                 return;
             }
@@ -771,6 +760,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// <summary>Evaluate and discard.</summary>
         private static void WriteExpressionStatement(VarRef expr, WriteHelper writeHelper)
         {
+            if (expr.DiscardCode != null)
+            {
+                // unused struct result: the call leaves a pointer on tp, which is dropped
+                writeHelper.CodeSeg.WriteLine(expr.DiscardCode);
+                writeHelper.CodeSeg.WriteLine("drop");
+                return;
+            }
+
             if (expr.Getter != null)
             {
                 writeHelper.CodeSeg.WriteLine(expr.Getter);
@@ -922,6 +919,50 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     var cHelper = writeHelper.CHelper;
                     var expr = new ExpressionToVarRefVisitor(GetSourceRef, cHelper, ReduceTypeDesc1)
                         .VisitExpression(expression);
+
+                    var retType = writeHelper.RetType;
+                    var retIsStruct = retType is { IsStruct: true, PointerDepth: 0 };
+                    var exprIsStruct = expr.Type is { IsStruct: true, PointerDepth: 0 };
+                    if (retIsStruct || exprIsStruct)
+                    {
+                        if (!retIsStruct || !exprIsStruct || retType!.BaseName != expr.Type.BaseName)
+                        {
+                            throw new CompilerException(GetSourceRef(expression), $"Cannot return {expr.Type.Display} from a function returning {retType?.Display}");
+                        }
+
+                        // A struct is returned as one pointer on tp, pointing into this (soon dead) frame.
+                        if (expr.DiscardCode != null)
+                        {
+                            // `return g();` the pointer of the callee's dead frame is passed through
+                            codeSeg.WriteLine(expr.DiscardCode);
+                        }
+                        else if (expr.Prelude == null
+                            && expr.GetPointer is { } ptr
+                            && System.Text.RegularExpressions.Regex.IsMatch(ptr, @"^push\.sp \d+( ;.*)?$"))
+                        {
+                            // a local or a parameter already lives in this frame
+                            codeSeg.WriteLine(ptr);
+                        }
+                        else
+                        {
+                            // anything else (global, *p, ...) is copied into a hidden local first
+                            var slots = StructVar.SlotsOf(retType);
+                            var temp = 4 * cHelper.AllocateStackItems(slots);
+                            var tempVar = StructVar.Build(
+                                retType,
+                                temp,
+                                "(return value)",
+                                getter: (off, path) => $"push.d.sp {off} ; {path}",
+                                setter: (off, path) => $"pop.sp {off} ; {path}",
+                                pointer: (off, path) => $"push.sp {off} ; &{path}"
+                            );
+                            codeSeg.WriteLine(cHelper.CopyStruct(tempVar, expr, GetSourceRef(expression)));
+                            codeSeg.WriteLine($"push.sp {temp} ; (return value)");
+                        }
+
+                        codeSeg.WriteLine("ret");
+                        return;
+                    }
 
                     if (expr.Getter == null)
                     {

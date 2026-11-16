@@ -13,7 +13,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         LLMath? Math = null,
         int PointerDepth = 0,
         TypeDesc? BaseType = null,
-        bool IsStruct = false
+        bool IsStruct = false,
+        IReadOnlyList<StructMember>? Members = null
         )
     {
         public string Display => $"{BaseName}{new string('*', PointerDepth)}";
@@ -80,6 +81,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 Comparators = LLComparators.IntVer,
                 Math = LLMath.PointerVer,
                 PointerDepth = PointerDepth + 1,
+                IsStruct = false,
+                Members = null,
                 BaseType = (PointerDepth == 0) 
                     ? this 
                     : BaseType ?? throw new Exception($"BaseType must exists of {Display}"),

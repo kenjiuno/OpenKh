@@ -55,6 +55,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return;
             }
 
+            if (varTypePair != null)
+            {
+                // `struct S { ... };` defines a type only
+                return;
+            }
+
             throw new CompilerException(GetSourceRef(simpleDeclaration), "Unsupported simple declaration");
         }
 

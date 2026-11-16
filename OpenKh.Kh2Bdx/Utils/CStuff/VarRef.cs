@@ -10,5 +10,6 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         TypeDesc Type,
         string? Getter = null,
         string? Setter = null,
-        string? GetPointer = null);
+        string? GetPointer = null,
+        IReadOnlyDictionary<string, VarRef>? Members = null);
 }

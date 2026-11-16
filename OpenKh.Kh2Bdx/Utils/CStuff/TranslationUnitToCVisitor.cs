@@ -57,6 +57,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
             foreach (var declaration in declarationseq.declaration())
             {
+                // struct definitions must be known before signatures that use them
+                if (declaration.blockDeclaration()?.simpleDeclaration()?.declSpecifierSeq() is { } specs)
+                {
+                    ReduceTypeDesc1.Reduce(specs);
+                }
+
                 if (declaration.functionDefinition() is var fd && fd != null && fd.functionBody() != null)
                 {
                     var (name, retType, argPairs) = GetSignature(fd);
@@ -88,6 +94,20 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     : null,
                 DeclareVar: (argPair, sourceRef) =>
                 {
+                    if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
+                    {
+                        // every member gets its own label (s.a, s.inner.b, ...) at consecutive addresses
+                        bssSeg.WriteLine($"{argPair.Name}:");
+                        WriteStructLabels(bssSeg, argPair.Type, argPair.Name, "resb 4");
+                        return globalVarRefDict[argPair.Name] = StructVar.Build(
+                            argPair.Type,
+                            0,
+                            argPair.Name,
+                            getter: (_, path) => $"push.d.wp {path}",
+                            setter: (_, path) => $"pop.wp {path}",
+                            pointer: (_, path) => $"push.wp {path}"
+                        );
+                    }
                     var size = argPair.Type.Size;
                     var var1 = globalVarRefDict[argPair.Name] = new VarRef(
                         Type: argPair.Type,
@@ -99,11 +119,24 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         ? 4
                         : (size + 3) & (~3);
                     bssSeg.WriteLine($"{argPair.Name}:");
-                    bssSeg.WriteLine($" resb {4 * numBytes}");
+                    bssSeg.WriteLine($" resb {numBytes}");
                     return var1;
                 },
                 DeclareStaticVar: (argPair, sourceRef) =>
                 {
+                    if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
+                    {
+                        staticDataSeg.WriteLine($"{argPair.Name}:");
+                        WriteStructLabels(staticDataSeg, argPair.Type, argPair.Name, "resw 2");
+                        return globalVarRefDict[argPair.Name] = StructVar.Build(
+                            argPair.Type,
+                            0,
+                            argPair.Name,
+                            getter: (_, path) => $"push.d.bd {path}",
+                            setter: (_, path) => $"pop.bd {path}",
+                            pointer: (_, path) => $"push.bd {path}"
+                        );
+                    }
                     var size = argPair.Type.Size;
                     var var1 = globalVarRefDict[argPair.Name] = new VarRef(
                         Type: argPair.Type,
@@ -204,6 +237,24 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             return string.Join(",", parts);
         }
 
+        /// <summary>Emit a label per member (s.a, s.inner.b) and reserve a slot for each scalar leaf.</summary>
+        private static void WriteStructLabels(TextWriter writer, TypeDesc type, string path, string reserve)
+        {
+            foreach (var member in type.Members!)
+            {
+                var memberPath = path + "." + member.Name;
+                writer.WriteLine($"{memberPath}:");
+                if (member.Type.IsStruct && member.Type.PointerDepth == 0)
+                {
+                    WriteStructLabels(writer, member.Type, memberPath, reserve);
+                }
+                else
+                {
+                    writer.WriteLine($" {reserve}");
+                }
+            }
+        }
+
         private (string Name, TypeDesc RetType, ArgPair[] Args) GetSignature(
             CPP14Parser.FunctionDefinitionContext functionDefinition)
         {
@@ -241,6 +292,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 .Select(parameterDeclarationToNameAndTypePairVisitor.Reduce)
                 .ToArray();
 
+            if (retType.IsStruct && retType.PointerDepth == 0)
+            {
+                throw new CompilerException(GetSourceRef(functionDefinition), $"{funcName}: returning struct by value is not supported (use a pointer)");
+            }
+
             return (funcName, retType, argPairs);
         }
 
@@ -263,6 +319,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             {
                 var spIndex = numLocalStackItemsAllocated;
                 var size = argPair.Type.Size;
+
+                if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
+                {
+                    throw new CompilerException(GetSourceRef(functionDefinition), $"{funcName}: passing struct by value is not supported (use a pointer)");
+                }
 
                 argDict[argPair.Name] = new VarRef(
                     Type: argPair.Type,
@@ -367,6 +428,17 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             ? 1
                             : (numBytes + 3) / 4
                     );
+                    if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
+                    {
+                        return varRefDict[argPair.Name] = StructVar.Build(
+                            argPair.Type,
+                            4 * spIndex,
+                            argPair.Name,
+                            getter: (off, path) => $"push.d.sp {off} ; {path}",
+                            setter: (off, path) => $"pop.sp {off} ; {path}",
+                            pointer: (off, path) => $"push.sp {off} ; &{path}"
+                        );
+                    }
                     return varRefDict[argPair.Name] = new VarRef(
                         Type: argPair.Type,
                         Getter: (numBytes <= 4) ? $"push.d.sp {4 * spIndex} ; {argPair.Name}" : null,
@@ -671,12 +743,25 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             throw new CompilerException(GetSourceRef(it), "Unsupported iteration statement");
         }
 
-        private static bool IsDeclarationWithoutType(CPP14Parser.DeclarationStatementContext declarationStatement)
+        private bool IsDeclarationWithoutType(CPP14Parser.DeclarationStatementContext declarationStatement)
         {
             var simpleDeclaration = declarationStatement.blockDeclaration()?.simpleDeclaration();
-            return simpleDeclaration != null
-                && simpleDeclaration.declSpecifierSeq() == null
-                && simpleDeclaration.initDeclaratorList() != null;
+            if (simpleDeclaration == null || simpleDeclaration.initDeclaratorList() == null)
+            {
+                return false;
+            }
+
+            var declSpecifierSeq = simpleDeclaration.declSpecifierSeq();
+            if (declSpecifierSeq == null)
+            {
+                return true;
+            }
+
+            // `g(&s);` is parsed as a declaration whose type name is `g`. If it is not a struct tag, it is an expression.
+            var typeName = (declSpecifierSeq.declSpecifier().Length == 1)
+                ? declSpecifierSeq.declSpecifier()[0].typeSpecifier()?.trailingTypeSpecifier()?.simpleTypeSpecifier()?.theTypeName()?.className()?.Identifier()?.GetText()
+                : null;
+            return typeName != null && !ReduceTypeDesc1.Structs.ContainsKey(typeName);
         }
 
         private void WriteStatementJumpStatement(CPP14Parser.JumpStatementContext jumpStatement, WriteHelper writeHelper)

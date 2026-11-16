@@ -170,6 +170,74 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void StructGlobalMembersUseLabels()
+        {
+            var s = Compile("struct S { int a; float b; } g; void f() { g.a = 1; g.b = g.b + 2.0; }");
+            Assert.Contains("section .bss\ng:\ng.a:\n resb 4\ng.b:\n resb 4", s);
+            Assert.Contains(" pop.wp g.a\n", s);
+            Assert.Contains(" push.d.wp g.b\n", s);
+        }
+
+        [Fact]
+        public void StructLocalMembersUseSlots()
+        {
+            var s = Compile("struct S { int a; int b; int c; }; int f() { struct S s; s.b = 5; return s.b + s.c; }");
+            Assert.Contains(" pop.sp 4 ; s.b\n", s);
+            Assert.Contains(" push.d.sp 8 ; s.c\n", s);
+        }
+
+        [Fact]
+        public void StructPointerMemberAccess()
+        {
+            var s = Compile("struct S { int a; int b; }; int f(struct S *p) { return p->b + (*p).a; }");
+            Assert.Contains(" push.d.sp 0 ; p\n push.d.pop 4\n", s);
+            Assert.Contains(" push.d.pop 0\n", s);
+        }
+
+        [Fact]
+        public void AddressOfStructPassedToFunction()
+        {
+            var s = Compile("struct S { int a; int b; }; void g(struct S *p) { } void f() { struct S s; g(&s); }");
+            Assert.Contains(" push.sp 0 ; &s\n jal 4, g", s);
+        }
+
+        [Fact]
+        public void NestedStruct()
+        {
+            var s = Compile("struct I { int x; int y; }; struct O { int h; struct I i; }; void f() { struct O o; o.i.y = 3; }");
+            Assert.Contains(" pop.sp 8 ; o.i.y\n", s);
+        }
+
+        [Fact]
+        public void SelfReferentialStructLinkedList()
+        {
+            var s = Compile(
+                "struct V { int x; struct V *next; };" +
+                "int sum(struct V *p) { int t = 0; while (p) { t += p->x; p = p->next; } return t; }"
+            );
+            Assert.Contains(" push.d.pop 0\n", s);
+            Assert.Contains(" push.d.pop 4\n", s);
+        }
+
+        [Fact]
+        public void StructTagWithoutKeyword()
+        {
+            Compile("struct S { int a; }; S g; void f() { g.a = 1; }");
+        }
+
+        [Theory]
+        [InlineData("struct S { int a; }; void f() { struct S s; s.zzz = 1; }")]
+        [InlineData("struct S { int a; }; void f(struct S s) { }")]
+        [InlineData("struct S { int a; }; struct S f() { }")]
+        [InlineData("void f() { struct Nope n; }")]
+        [InlineData("void f(int x) { x.a = 1; }")]
+        [InlineData("struct S { int a; }; void f(struct S *p) { p.a = 1; }")]
+        public void BadStructUse(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
         public void CharLiteral()
         {
             Assert.Contains(" push 65\n", Compile("int f() { return 'A'; }"));

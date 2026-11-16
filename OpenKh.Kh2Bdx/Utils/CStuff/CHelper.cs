@@ -150,6 +150,22 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var newType = lval.Type.BaseType ?? throw new CompilerException(sourceRef, $"Pointer type {lval.Type.Display} has no base type");
                 var size = newType.Size;
 
+                if (newType.IsStruct)
+                {
+                    // *p of struct pointer: members are read through the pointer.
+                    // Writing through a pointer has no known instruction, so no setter.
+                    return StructVar.Build(
+                        newType,
+                        0,
+                        "",
+                        getter: (off, _) => JoinLines(lval.Getter, $"push.d.pop {off}"),
+                        setter: null,
+                        pointer: (off, _) => (off == 0)
+                            ? lval.Getter!
+                            : JoinLines(lval.Getter, $"push {off}", "add")
+                    );
+                }
+
                 return new VarRef(
                     Type: newType,
                     Getter: (size <= 4)
@@ -183,10 +199,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
         internal VarRef MakePointer(VarRef lval, SourceRef sourceRef)
         {
-            var newType = lval.Type with
-            {
-                PointerDepth = lval.Type.PointerDepth + 1,
-            };
+            var newType = lval.Type.MakePointerType();
 
             return new VarRef(
                 Type: newType,

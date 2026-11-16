@@ -961,6 +961,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             )
             {
                 var lval = VisitUnaryExpression(unaryExpressionSub);
+
+                if (unaryOperator.And() != null)
+                {
+                    // &x needs the address only (a struct has no value getter)
+                    return CHelper.MakePointer(lval, GetSourceRef(unaryOperator));
+                }
+
                 if (lval.Getter == null)
                 {
                     throw new CompilerException(GetSourceRef(unaryExpressionSub), "Left value must have a getter");
@@ -1076,6 +1083,35 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 && postfixExpression.LeftParen() != null)
             {
                 return VisitCall(postfixExpression, callee);
+            }
+
+            if (postfixExpression.postfixExpression() is var objectExpression
+                && objectExpression != null
+                && (postfixExpression.Dot() != null || postfixExpression.Arrow() != null))
+            {
+                // s.member, p->member
+                var memberName = postfixExpression.idExpression()?.unqualifiedId()?.Identifier()?.GetText()
+                    ?? throw new CompilerException(GetSourceRef(postfixExpression), "Member name is expected");
+
+                var obj = VisitPostfixExpression(objectExpression);
+
+                if (postfixExpression.Arrow() != null)
+                {
+                    if (obj.Type.PointerDepth != 1 || obj.Type.BaseType?.IsStruct != true)
+                    {
+                        throw new CompilerException(GetSourceRef(postfixExpression), $"Left of -> must be a pointer to struct, but {obj.Type.Display}");
+                    }
+                    obj = CHelper.Deref(obj, GetSourceRef(postfixExpression));
+                }
+
+                if (obj.Members == null)
+                {
+                    throw new CompilerException(GetSourceRef(postfixExpression), $"Left of . must be a struct, but {obj.Type.Display}");
+                }
+
+                return obj.Members.TryGetValue(memberName, out var member)
+                    ? member
+                    : throw new CompilerException(GetSourceRef(postfixExpression), $"{obj.Type.Display} has no member '{memberName}'");
             }
 
             if (postfixExpression.postfixExpression() is var innerPostfixExpression
@@ -1301,14 +1337,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var literal = literalList[0];
                 if (false)
                 { }
-                else if (literal.IntegerLiteral() is var integerLiteral)
+                else if (literal.IntegerLiteral() is { } integerLiteral)
                 {
                     return new VarRef(
                         Type: TypeDesc.Int32,
                         Getter: $"push {integerLiteral.GetText()}"
                     );
                 }
-                else if (literal.FloatingLiteral() is var floatingLiteral)
+                else if (literal.FloatingLiteral() is { } floatingLiteral)
                 {
                     return new VarRef(
                         Type: TypeDesc.Float32,

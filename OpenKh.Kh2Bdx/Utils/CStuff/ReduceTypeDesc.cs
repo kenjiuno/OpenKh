@@ -123,75 +123,138 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             throw new CompilerException(GetSourceRef(typeSpecifier), "Unsupported type specifier");
         }
 
+        /// <summary>struct tags defined so far (global scope only)</summary>
+        internal Dictionary<string, TypeDesc> Structs { get; } = new();
+
+        // the same definition can be reached twice (signature pre-pass and the main pass)
+        private readonly Dictionary<CPP14Parser.ClassSpecifierContext, TypeDesc> _classCache = new();
+
         private TypeDesc ReduceClassSpecifier(CPP14Parser.ClassSpecifierContext classSpecifier)
         {
+            if (_classCache.TryGetValue(classSpecifier, out var cached))
+            {
+                return cached;
+            }
+            return _classCache[classSpecifier] = ReduceClassSpecifierCore(classSpecifier);
+        }
+
+        private TypeDesc ReduceClassSpecifierCore(CPP14Parser.ClassSpecifierContext classSpecifier)
+        {
             var classHead = classSpecifier.classHead();
+            var classKey = classHead.classKey();
 
-            var isUnion = false;
-
+            if (classKey?.Struct() == null)
             {
-                var classKey = classHead.classKey();
-
-                if (classKey != null)
-                {
-                    if (false)
-                    { }
-                    else if (classKey.Class() != null)
-                    {
-                        throw new CompilerException(GetSourceRef(classKey), "Class types are not supported");
-                    }
-                    else if (classKey.Struct() != null)
-                    {
-                        // expected
-                    }
-                }
-                else if (classHead.Union() != null)
-                {
-                    // expected
-                    isUnion = true;
-                }
-                else
-                {
-                    throw new CompilerException(GetSourceRef(classHead), "Unsupported class key");
-                }
+                throw new CompilerException(GetSourceRef(classHead), "Only struct is supported");
             }
 
-            if (classHead.classHeadName() is var classHeadName
-                && classHeadName != null)
+            var tagName = classHead.classHeadName()?.className()?.Identifier()?.GetText();
+
+            if (tagName != null && Structs.ContainsKey(tagName))
             {
-                // struct <classHeadName> { ... };
+                throw new CompilerException(GetSourceRef(classHead), $"struct {tagName} is already defined");
             }
 
-            var memberSpecification = classSpecifier.memberSpecification();
-            if (memberSpecification != null)
-            {
-                var memberdeclarations = memberSpecification.memberdeclaration();
-                if (memberdeclarations != null)
-                {
-                    int offset = 0;
+            var baseName = tagName != null ? $"struct {tagName}" : "struct";
 
-                    foreach (var memberdeclaration in memberdeclarations)
+            // Pass 1: the tag is visible as an empty type, only to measure the size
+            // (so that `struct V { struct V *next; }` can name itself).
+            if (tagName != null)
+            {
+                Structs[tagName] = new TypeDesc(BaseName: baseName, Size: 0, IsStruct: true, Members: new List<StructMember>());
+            }
+            var totalSlots = LayoutMembers(classSpecifier).Sum(it => StructVar.SlotsOf(it.Type));
+
+            // Pass 2: the real type, whose pointer members refer to the real type.
+            var members = new List<StructMember>();
+            var structType = new TypeDesc(
+                BaseName: baseName,
+                Size: 4 * totalSlots,
+                IsStruct: true,
+                Members: members
+            );
+            if (tagName != null)
+            {
+                Structs[tagName] = structType;
+            }
+            members.AddRange(LayoutMembers(classSpecifier));
+
+            return structType;
+        }
+
+        private List<StructMember> LayoutMembers(CPP14Parser.ClassSpecifierContext classSpecifier)
+        {
+            var members = new List<StructMember>();
+            var slot = 0;
+
+            foreach (var memberdeclaration in classSpecifier.memberSpecification()?.memberdeclaration()
+                ?? Array.Empty<CPP14Parser.MemberdeclarationContext>())
+            {
+                if (memberdeclaration.declSpecifierSeq() is var declSpecifierSeq
+                    && declSpecifierSeq != null
+                    && memberdeclaration.memberDeclaratorList() is var memberDeclaratorList
+                    && memberDeclaratorList != null)
+                {
+                    var memberBaseType = Reduce(declSpecifierSeq).TypeDesc;
+
+                    foreach (var memberDeclarator in memberDeclaratorList.memberDeclarator())
                     {
-                        if (memberdeclaration.declSpecifierSeq() is var declSpecifierSeq
-                            && declSpecifierSeq != null
-                            && memberdeclaration.memberDeclaratorList() is var memberDeclaratorList
-                            && memberDeclaratorList != null)
+                        var declarator = memberDeclarator.declarator()
+                            ?? throw new CompilerException(GetSourceRef(memberDeclarator), "declarator must exist");
+
+                        var pointerDeclarator = declarator.pointerDeclarator()
+                            ?? throw new CompilerException(GetSourceRef(declarator), "Unsupported member declarator");
+                        var noPointerDeclarator = pointerDeclarator.noPointerDeclarator();
+                        if (noPointerDeclarator?.LeftBracket() != null || noPointerDeclarator?.parametersAndQualifiers() != null)
                         {
-                            var memberType = Reduce(declSpecifierSeq);
-
-                            foreach (var memberDeclarator in memberDeclaratorList.memberDeclarator())
-                            {
-                                var declarator = memberDeclarator.declarator()
-                                    ?? throw new CompilerException(GetSourceRef(memberDeclarator), "declarator must exist");
-
-                                var memberName = NameOfDeclarator(declarator);
-                            }
+                            throw new CompilerException(GetSourceRef(declarator), "Array and function members are not supported");
                         }
+
+                        var memberType = memberBaseType;
+                        foreach (var _ in pointerDeclarator.pointerOperator())
+                        {
+                            memberType = memberType.MakePointerType();
+                        }
+
+                        if (memberType.Size == 0)
+                        {
+                            throw new CompilerException(GetSourceRef(declarator), "Member must not be void or an incomplete type");
+                        }
+
+                        var memberName = NameOfDeclarator(declarator);
+                        if (members.Any(it => it.Name == memberName))
+                        {
+                            throw new CompilerException(GetSourceRef(declarator), $"Duplicate member '{memberName}'");
+                        }
+
+                        members.Add(new StructMember(memberName, memberType, slot));
+                        slot += StructVar.SlotsOf(memberType);
                     }
+                }
+                else if (memberdeclaration.declSpecifierSeq() != null || memberdeclaration.memberDeclaratorList() != null)
+                {
+                    throw new CompilerException(GetSourceRef(memberdeclaration), "Unsupported member declaration");
                 }
             }
 
-            throw new NotImplementedException();
+            return members;
+        }
+
+        private TypeDesc ReduceElaboratedTypeSpecifier(CPP14Parser.ElaboratedTypeSpecifierContext elaborated)
+        {
+            if (elaborated.classKey()?.Struct() != null && elaborated.Identifier() is var identifier && identifier != null)
+            {
+                return LookupStruct(identifier.GetText(), elaborated);
+            }
+
+            throw new CompilerException(GetSourceRef(elaborated), "Unsupported elaborated type specifier");
+        }
+
+        private TypeDesc LookupStruct(string name, Antlr4.Runtime.ParserRuleContext context)
+        {
+            return Structs.TryGetValue(name, out var type)
+                ? type
+                : throw new CompilerException(GetSourceRef(context), $"Unknown type '{name}'");
         }
 
         private string NameOfDeclarator(CPP14Parser.DeclaratorContext declarator)
@@ -233,11 +296,24 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return ReduceSimpleTypeSpecifier(simpleTypeSpecifier);
             }
 
+            if (trailingTypeSpecifier.elaboratedTypeSpecifier() is var elaborated
+                && elaborated != null)
+            {
+                return ReduceElaboratedTypeSpecifier(elaborated);
+            }
+
             throw new CompilerException(GetSourceRef(trailingTypeSpecifier), "Unsupported trailing type specifier");
         }
 
         private TypeDesc ReduceSimpleTypeSpecifier(CPP14Parser.SimpleTypeSpecifierContext simpleTypeSpecifier)
         {
+            if (simpleTypeSpecifier.theTypeName()?.className()?.Identifier() is var typeIdentifier
+                && typeIdentifier != null)
+            {
+                // `S x;` (struct tag without the struct keyword)
+                return LookupStruct(typeIdentifier.GetText(), simpleTypeSpecifier);
+            }
+
             if (false)
             { }
             else if (simpleTypeSpecifier.Float() != null)

@@ -514,7 +514,7 @@ namespace OpenKh.Tests.kh2
         public void CallResultStoredInLocalIsJalThenMemcpySp()
         {
             var s = Compile("struct P { int x; int y; }; struct P g() { struct P r; return r; } void f() { struct P a; a = g(); }");
-            Assert.Contains(" jal 8, g\n memcpy.sp 8, 0 ; struct P\n", s);
+            Assert.Contains(" jal 4, g\n memcpy.sp 8, 0 ; struct P\n", s);
         }
 
         [Fact]
@@ -528,7 +528,7 @@ namespace OpenKh.Tests.kh2
         public void StructResultMemberAndArgumentAreCopiedFirst()
         {
             var s = Compile("struct P { int x; int y; }; struct P g() { struct P r; return r; } int h(struct P p) { return p.x; } int f() { return h(g()) + g().y; }");
-            Assert.Contains("jal 8, g\n memcpy.sp 8, 0 ; g()\n push.d.sp 4 ; g().y\n push.d.sp 0 ; g().x\n jal ", s);
+            Assert.Contains("jal 4, g\n memcpy.sp 8, 0 ; g()\n push.d.sp 4 ; g().y\n push.d.sp 0 ; g().x\n jal ", s);
         }
 
         [Theory]
@@ -539,6 +539,74 @@ namespace OpenKh.Tests.kh2
         public void BadStructReturns(string code)
         {
             Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
+        public void JalCountIsWhatIsAliveAtThatPoint()
+        {
+            // the same pattern as real data: jal 4 (no temporary yet), the 16 bytes result is copied to sp+16,
+            // then jal 12 (locals 8 + temporary 16 + system 8 = 32 -> 48 bytes)
+            var s = Compile(
+                "struct V { int a; int b; int c; int d; }; struct V m(int k) { struct V v; return v; } " +
+                "int cmp(struct V a, struct V b) { return a.a; } int f(int self, int i) { return cmp(m(i), m(self)); }"
+            );
+            Assert.Contains(" push.d.sp 0 ; self\n jal 4, m\n memcpy.sp 16, 16 ; m()\n", s);
+            Assert.Contains(" push.d.sp 4 ; i\n jal 12, m\n memcpy.sp 16, 32 ; m()\n", s);
+            Assert.Contains(" jal 16, cmp\n", s);
+        }
+
+        [Fact]
+        public void LocalsDeclaredLaterDoNotEnlargeEarlierJals()
+        {
+            var s = Compile("void g() { } void f() { int a; g(); int b; int c; int d; int e; g(); }");
+            Assert.Contains(" jal 4, g\n", s);
+            Assert.Contains(" jal 8, g\n", s);
+        }
+
+        [Fact]
+        public void TemporariesAreReleasedWhenTheStatementIsDone()
+        {
+            var s = Compile(
+                "struct P { int x; int y; }; struct P g() { struct P r; return r; } " +
+                "int f() { int a = g().x; int b = g().y; return a + b; }"
+            );
+            // both results use the same slots (16 bytes aligned), and b is declared after the first temporary was released
+            Assert.Contains(" memcpy.sp 8, 16 ; g()\n push.d.sp 16 ; g().x\n pop.sp 0 ; a\n", s);
+            Assert.Contains(" memcpy.sp 8, 16 ; g()\n push.d.sp 20 ; g().y\n pop.sp 4 ; b\n", s);
+        }
+
+        [Fact]
+        public void TemporariesOfAConditionAreReleasedBeforeTheBody()
+        {
+            var s = Compile(
+                "struct P { int x; int y; }; struct P g() { struct P r; return r; } " +
+                "void f() { if (g().x) { int a = g().y; } while (g().x) { int b = g().y; } }"
+            );
+            // the temporary of each condition is at sp+0 or sp+16 (16 bytes aligned), never accumulated
+            Assert.DoesNotContain("memcpy.sp 8, 32", s);
+            Assert.DoesNotContain("memcpy.sp 8, 48", s);
+        }
+
+        [Fact]
+        public void FunctionWithPointerStoreCoversTheSaveSlotInEveryJal()
+        {
+            // the save slot is above everything, and a jal in the pointer expression runs while it is alive
+            var s = Compile("int *p() { return 0; } void g() { } void f() { g(); *p() = 1; }");
+            Assert.Contains(" jal 4, g\n", s);
+            Assert.Contains(" jal 4, p\n", s);
+        }
+
+        [Fact]
+        public void AssignmentVisitsRightSideFirst()
+        {
+            // the copy of g() is alive while the call on the left side runs, so that call must cover it
+            var s = Compile(
+                "struct P { int x; int y; }; struct P g() { struct P r; return r; } struct P *q() { return 0; } " +
+                "void f() { *q() = g(); }"
+            );
+            var jalQ = System.Text.RegularExpressions.Regex.Match(s, @"jal (\d+), q");
+            Assert.True(jalQ.Success);
+            Assert.True(int.Parse(jalQ.Groups[1].Value) >= 4);
         }
 
         [Fact]

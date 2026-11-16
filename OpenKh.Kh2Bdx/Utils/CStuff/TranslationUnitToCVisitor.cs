@@ -306,13 +306,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             // the body is buffered, because jal needs the frame size, which is known only after the whole body is compiled.
             var codeSeg = new StringWriter();
 
-            var numLocalStackItemsAllocated = 0; // 4 * n bytes
+            var frame = new FrameState();
 
             var argDict = new Dictionary<string, VarRef>();
 
             foreach (var argPair in argPairs)
             {
-                var spIndex = numLocalStackItemsAllocated;
+                var spIndex = frame.Top;
                 var size = argPair.Type.Size;
 
                 if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
@@ -326,7 +326,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         setter: (off, path) => $"pop.sp {off} ; {path}",
                         pointer: (off, path) => $"push.sp {off} ; &{path}"
                     );
-                    numLocalStackItemsAllocated += StructVar.SlotsOf(argPair.Type);
+                    frame.Allocate(StructVar.SlotsOf(argPair.Type));
                     continue;
                 }
 
@@ -337,12 +337,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     GetPointer: $"push.sp {4 * spIndex} ; &{argPair.Name}"
                 );
 
-                numLocalStackItemsAllocated += (size == 0)
-                    ? 4
-                    : (size + 3) / 4;
+                frame.Allocate((size == 0) ? 4 : (size + 3) / 4);
             }
 
-            var numArgItemsUsed = numLocalStackItemsAllocated;
+            var numArgItemsUsed = frame.Top;
 
             if (256 <= numArgItemsUsed)
             {
@@ -361,12 +359,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                 cHelper = cHelper with
                 {
-                    AllocateStackItems = numItems =>
-                    {
-                        var spIndex = numLocalStackItemsAllocated;
-                        numLocalStackItemsAllocated += numItems;
-                        return spIndex;
-                    }
+                    AllocateStackItems = numItems => frame.Allocate(numItems),
+                    Frame = frame,
                 };
 
                 var childScope = NewChildScope(cHelper, argDict);
@@ -395,18 +389,20 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             codeSeg.WriteLine("ret");
 
-            // frame = locals + 2 system DWORDs (count, ret-ip), aligned to 16 bytes. Every jal in this function uses the same value.
             var body = codeSeg.ToString();
+            var alwaysAtLeast = 0;
             if (body.Contains(CHelper.PointerSaveSlotPlaceholder))
             {
-                // hidden local used by pointer stores to save sp[0]
-                body = body.Replace(CHelper.PointerSaveSlotPlaceholder, (4 * numLocalStackItemsAllocated).ToString());
-                numLocalStackItemsAllocated++;
+                // Hidden local used by pointer stores to save sp[0]. A jal can be in the pointer expression while it
+                // is alive, so it is put above everything and every jal of this function covers it.
+                var saveSlot = frame.ReserveAboveHighWater();
+                body = body.Replace(CHelper.PointerSaveSlotPlaceholder, (4 * saveSlot).ToString());
+                alwaysAtLeast = saveSlot + 1;
             }
-            var frameSize = CHelper.FrameSizeOf(numLocalStackItemsAllocated);
-            finalCodeSeg.WriteLine(
-                body.Replace(CHelper.FrameSizePlaceholder, frameSize.ToString())
-            );
+
+            // Each jal covers what is alive at that point: locals + live temporaries + 2 system DWORDs (count, ret-ip),
+            // aligned to 16 bytes.
+            finalCodeSeg.WriteLine(frame.ResolveJalFrameSizes(body, alwaysAtLeast));
         }
 
         private CHelper NewChildScope(
@@ -462,7 +458,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 DeclareStaticVar: parent.DeclareStaticVar,
                 AllocateStackItems: parent.AllocateStackItems,
                 GetFunc: parent.GetFunc,
-                AddStringLiteral: parent.AddStringLiteral
+                AddStringLiteral: parent.AddStringLiteral,
+                Frame: parent.Frame
             );
         }
 
@@ -512,6 +509,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
         private void WriteStatement(CPP14Parser.StatementContext statement, WriteHelper writeHelper)
         {
+            // temporaries (e.g. copies of returned structs) of a statement are dead when it is done
+            var mark = writeHelper.CHelper.TempMark();
+            WriteStatementCore(statement, writeHelper);
+            writeHelper.CHelper.ReleaseTemps(mark);
+        }
+
+        private void WriteStatementCore(CPP14Parser.StatementContext statement, WriteHelper writeHelper)
+        {
             var codeSeg = writeHelper.CodeSeg;
 
             var cHelper = writeHelper.CHelper;
@@ -523,6 +528,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 { }
                 else if (selectionStatement.If() != null)
                 {
+                    var condMark = cHelper.TempMark();
                     var expr = new ExpressionToVarRefVisitor(GetSourceRef, cHelper, ReduceTypeDesc1)
                         .Visit(selectionStatement.condition());
 
@@ -538,6 +544,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     var endifLabel = labelGen("endif");
                     codeSeg.WriteLine($"{expr.Getter}");
                     codeSeg.WriteLine($"jz {elseLabel}");
+                    cHelper.ReleaseTemps(condMark); // the condition is evaluated before the branches run
                     if (1 <= innerStatements?.Length
                         && innerStatements[0] is var thenStatement
                         && thenStatement != null)
@@ -653,6 +660,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             var expressionVisitor = new ExpressionToVarRefVisitor(GetSourceRef, cHelper, ReduceTypeDesc1);
 
+            // allocated before the value is visited: temporaries of the value expression are released right after it
+            var slot = 4 * cHelper.AllocateStackItems(1);
+            var valueMark = cHelper.TempMark();
+
             var value = expressionVisitor.Visit(selectionStatement.condition());
             if (value.Getter == null)
             {
@@ -690,8 +701,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             string? defaultLabel = null;
             var seen = new HashSet<string>();
 
-            var slot = 4 * cHelper.AllocateStackItems(1);
             codeSeg.WriteLine(cHelper.JoinLines(value.Getter, valueConverter, $"pop.sp {slot} ; switch value"));
+            cHelper.ReleaseTemps(valueMark);
 
             for (int x = 0; x < labeled.Count; x++)
             {
@@ -789,8 +800,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             string Cond(CPP14Parser.ConditionContext condition, WriteHelper wh)
             {
+                var mark = wh.CHelper.TempMark();
                 var expr = new ExpressionToVarRefVisitor(GetSourceRef, wh.CHelper, ReduceTypeDesc1).Visit(condition);
-                return expr.Getter ?? throw new CompilerException(GetSourceRef(condition), "Need to produce getter");
+                var getter = expr.Getter ?? throw new CompilerException(GetSourceRef(condition), "Need to produce getter");
+                wh.CHelper.ReleaseTemps(mark); // the condition is evaluated before the body runs
+                return getter;
             }
 
             if (it.Do() == null && it.While() != null)
@@ -812,9 +826,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 codeSeg.WriteLine($"{topLabel}:");
                 WriteStatement(it.statement(), inner);
                 codeSeg.WriteLine($"{contLabel}:");
+                var whileMark = writeHelper.CHelper.TempMark();
                 var expr = new ExpressionToVarRefVisitor(GetSourceRef, writeHelper.CHelper, ReduceTypeDesc1)
                     .VisitExpression(it.expression());
                 codeSeg.WriteLine(expr.Getter ?? throw new CompilerException(GetSourceRef(it.expression()), "Need to produce getter"));
+                writeHelper.CHelper.ReleaseTemps(whileMark);
                 codeSeg.WriteLine($"jnz {topLabel}");
                 codeSeg.WriteLine($"{endLabel}:");
                 return;
@@ -825,6 +841,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 // for (init; cond; step) body ; variables declared in init live in their own scope
                 var scoped = writeHelper with { CHelper = NewChildScope(writeHelper.CHelper) };
                 inner = inner with { CHelper = scoped.CHelper };
+
+                var initMark = scoped.CHelper.TempMark();
 
                 if (forInit.simpleDeclaration() is var simpleDeclaration && simpleDeclaration != null)
                 {
@@ -855,6 +873,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     );
                 }
 
+                scoped.CHelper.ReleaseTemps(initMark);
+
                 codeSeg.WriteLine($"{topLabel}:");
                 if (it.condition() is var condition && condition != null)
                 {
@@ -865,10 +885,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 codeSeg.WriteLine($"{contLabel}:");
                 if (it.expression() is var step && step != null)
                 {
+                    var stepMark = scoped.CHelper.TempMark();
                     WriteExpressionStatement(
                         new ExpressionToVarRefVisitor(GetSourceRef, scoped.CHelper, ReduceTypeDesc1).VisitExpression(step),
                         scoped
                     );
+                    scoped.CHelper.ReleaseTemps(stepMark);
                 }
                 codeSeg.WriteLine($"b {topLabel}");
                 codeSeg.WriteLine($"{endLabel}:");
@@ -947,7 +969,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         {
                             // anything else (global, *p, ...) is copied into a hidden local first
                             var slots = StructVar.SlotsOf(retType);
-                            var temp = 4 * cHelper.AllocateStackItems(slots);
+                            var temp = 4 * cHelper.AllocateTemp(slots);
                             var tempVar = StructVar.Build(
                                 retType,
                                 temp,

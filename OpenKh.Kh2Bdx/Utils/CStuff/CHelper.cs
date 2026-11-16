@@ -14,7 +14,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         Func<ArgPair, SourceRef, VarRef> DeclareStaticVar,
         Func<int, int> AllocateStackItems,
         Func<string, FuncSig?>? GetFunc = null,
-        Func<byte[], string>? AddStringLiteral = null
+        Func<byte[], string>? AddStringLiteral = null,
+        FrameState? Frame = null
         )
     {
         /// <summary>
@@ -28,6 +29,21 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// multiple of 4 DWORDs (16 bytes). Every jal in real data has such a count (4 to 76), as sp is kept 16 bytes aligned.
         /// </summary>
         public static int FrameSizeOf(int numLocalDwords) => (numLocalDwords + 2 + 3) & ~3;
+
+        /// <summary>Remember the current top of the sp frame, to <see cref="ReleaseTemps"/> later.</summary>
+        internal int TempMark() => Frame?.Top ?? 0;
+
+        /// <summary>The temporaries allocated since the mark are dead (their statement or condition is done).</summary>
+        internal void ReleaseTemps(int mark) => Frame?.ReleaseTemps(mark);
+
+        /// <summary>The frame size operand of a jal: what is alive now, resolved when the function is complete.</summary>
+        internal string NextJalFrameSize() => Frame?.NextJalFrameSize() ?? FrameSizePlaceholder;
+
+        /// <summary>
+        /// A temporary in the frame for the copy of a returned struct. Real data places it at a 16 bytes boundary.
+        /// </summary>
+        internal int AllocateTemp(int numItems) =>
+            Frame?.Allocate(numItems, temp: true, align16: true) ?? AllocateStackItems(numItems);
 
         /// <summary>
         /// Placeholder replaced by the byte offset of a hidden per-function sp slot, which keeps

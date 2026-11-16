@@ -85,8 +85,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 && assignmentExpression.initializerClause() is var initializerClause
                 && initializerClause != null)
             {
-                var lval = VisitLogicalOrExpression(logicalOrExpression);
+                // The right side is visited first. It runs first, and its temporaries (e.g. a returned struct that
+                // is being copied) are alive while a call in the left side (`f()->x = g()`) runs. Frame sizes of
+                // calls are decided in visiting order, so the order must not hide a live temporary from them.
                 var rval = VisitAssignment(initializerClause.assignmentExpression());
+                var lval = VisitLogicalOrExpression(logicalOrExpression);
 
                 var assignmentOperator = assignmentExpression.assignmentOperator();
 
@@ -1282,7 +1285,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
             else
             {
-                lines.Add($"jal {CHelper.FrameSizePlaceholder}, {funcName}");
+                lines.Add($"jal {CHelper.NextJalFrameSize()}, {funcName}");
             }
 
             if (sig.RetType.IsStruct && sig.RetType.PointerDepth == 0)
@@ -1291,7 +1294,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 // It stays valid only until the next jal, so it is copied right after the call.
                 var call = CHelper.JoinLines(lines.ToArray())!;
                 var slots = StructVar.SlotsOf(sig.RetType);
-                var tempOffset = 4 * CHelper.AllocateStackItems(slots);
+                var tempOffset = 4 * CHelper.AllocateTemp(slots);
                 var result = StructVar.Build(
                     sig.RetType,
                     tempOffset,

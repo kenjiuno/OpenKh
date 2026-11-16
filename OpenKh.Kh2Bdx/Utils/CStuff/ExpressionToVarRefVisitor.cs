@@ -1071,6 +1071,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return VisitPrimaryExpression(primaryExpression);
             }
 
+            if (postfixExpression.postfixExpression() is var callee
+                && callee != null
+                && postfixExpression.LeftParen() != null)
+            {
+                return VisitCall(postfixExpression, callee);
+            }
+
             if (postfixExpression.postfixExpression() is var innerPostfixExpression
                 && innerPostfixExpression != null)
             {
@@ -1130,6 +1137,70 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
 
             throw new CompilerException(GetSourceRef(postfixExpression), "Unsupported postfix expression");
+        }
+
+        /// <summary>
+        /// func(a, b, c)
+        ///
+        /// Arguments are pushed in reverse order, so that the first argument is on top of tp.
+        /// The callee pops them in declaration order (pop.sp 0, pop.sp 4, ...).
+        /// </summary>
+        private VarRef VisitCall(PostfixExpressionContext postfixExpression, PostfixExpressionContext callee)
+        {
+            var funcName = callee.primaryExpression()?.idExpression()?.unqualifiedId()?.Identifier()?.GetText()
+                ?? throw new CompilerException(GetSourceRef(callee), "Only direct function calls by name are supported");
+
+            var sig = CHelper.GetFunc?.Invoke(funcName)
+                ?? throw new CompilerException(GetSourceRef(callee), $"Unknown function '{funcName}'");
+
+            var args = postfixExpression.expressionList()?.initializerList()?.initializerClause()
+                ?? Array.Empty<InitializerClauseContext>();
+
+            if (args.Length != sig.NumIns)
+            {
+                throw new CompilerException(
+                    GetSourceRef(postfixExpression),
+                    $"Function '{funcName}' expects {sig.NumIns} argument(s) but {args.Length} given"
+                );
+            }
+
+            var lines = new List<string?>();
+
+            for (int x = args.Length - 1; 0 <= x; x--)
+            {
+                var assignmentExpression = args[x].assignmentExpression()
+                    ?? throw new CompilerException(GetSourceRef(args[x]), "Braced initializer is not supported as an argument");
+                var arg = VisitAssignment(assignmentExpression);
+                if (arg.Getter == null)
+                {
+                    throw new CompilerException(GetSourceRef(args[x]), "Argument must have a getter");
+                }
+                lines.Add(arg.Getter);
+
+                if (sig.ParamTypes != null)
+                {
+                    var converter = CHelper.GetConverter(FromType: arg.Type, ToType: sig.ParamTypes[x])
+                        ?? throw new CompilerException(
+                            GetSourceRef(args[x]),
+                            $"Cannot convert argument {x + 1} of '{funcName}' from {arg.Type.Display} to {sig.ParamTypes[x].Display}"
+                        );
+                    lines.Add(converter);
+                }
+            }
+
+            if (sig.Syscall is var (table, index))
+            {
+                lines.Add($"syscall {table}, {index} ; {funcName}");
+            }
+            else
+            {
+                lines.Add($"jal {CHelper.FrameSizePlaceholder}, {funcName}");
+            }
+
+            return new VarRef(
+                Type: sig.RetType,
+                Getter: CHelper.JoinLines(lines.ToArray())
+            );
         }
 
         private VarRef VisitPrimaryExpression(PrimaryExpressionContext primaryExpression)

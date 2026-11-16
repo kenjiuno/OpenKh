@@ -53,7 +53,8 @@ namespace OpenKh.Kh2Bdx.Utils
 
             {
                 writer.WriteLine("_initc:");
-                writer.WriteLine(result.InitCodeSeg);
+                // _initc has no locals: frame = 2 system DWORDs
+                writer.WriteLine(result.InitCodeSeg.ToString()?.Replace(CHelper.FrameSizePlaceholder, "2"));
                 writer.WriteLine(" ret");
             }
 

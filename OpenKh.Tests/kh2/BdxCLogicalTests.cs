@@ -57,6 +57,63 @@ namespace OpenKh.Tests.kh2
             File.WriteAllText($"{outPrefix}-compiled.bdscript", result.Bdscript);
         }
 
+        [Fact]
+        public void LocalCallUsesFrameSizeAndReverseArgOrder()
+        {
+            var result = new BdxCEncoder().EncodeC(
+                "int sub(int a, int b) { return a - b; }\n" +
+                "int caller(int x) { int y = 1; return sub(x, y); }\n",
+                "call.c"
+            );
+
+            // caller: x, y = 2 locals => frame = 2 + 2 = 4
+            Assert.Contains("push.d.sp 4 ; y\n push.d.sp 0 ; x\n jal 4, sub", result.Bdscript.Replace("\r\n", "\n"));
+        }
+
+        [Fact]
+        public void ForwardCallAndVoidStatementDoNotDrop()
+        {
+            var result = new BdxCEncoder().EncodeC(
+                "void a() { b(1); }\nvoid b(int v) { }\n",
+                "fwd.c"
+            ).Bdscript.Replace("\r\n", "\n");
+
+            Assert.Contains("push 1\n jal 2, b\n", result);
+            Assert.DoesNotContain("drop", result);
+        }
+
+        [Fact]
+        public void NonVoidCallStatementDrops()
+        {
+            var result = new BdxCEncoder().EncodeC(
+                "int f() { return 1; }\nvoid g() { f(); }\n",
+                "drop.c"
+            ).Bdscript.Replace("\r\n", "\n");
+
+            Assert.Contains("jal 2, f\n drop", result);
+        }
+
+        [Fact]
+        public void SyscallByTrapName()
+        {
+            var result = new BdxCEncoder().EncodeC(
+                "void f() { trap_puti(1, 2); int r = trap_random_get(5); }",
+                "sys.c"
+            ).Bdscript.Replace("\r\n", "\n");
+
+            Assert.Contains("push 2\n push 1\n syscall 0, 0 ; trap_puti\n", result);
+            Assert.Contains("syscall 0, 16 ; trap_random_get\n", result);
+        }
+
+        [Theory]
+        [InlineData("void f() { unknown(); }")]
+        [InlineData("int g(int a) { return a; } void f() { g(); }")]
+        [InlineData("void f() { trap_puti(1); }")]
+        public void BadCalls(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => new BdxCEncoder().EncodeC(code, "bad.c"));
+        }
+
         [Theory]
         [MemberData(nameof(GetRegressionTests))]
         public void RegressionTests(string name, string c, string expected)

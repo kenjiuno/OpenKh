@@ -1,4 +1,5 @@
 using Antlr4.Runtime;
+using OpenKh.Kh2Bdx.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -38,7 +39,37 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             var globalVarRefDict = new Dictionary<string, VarRef>();
 
+            // built-in traps first, then functions defined in this source (which may shadow traps).
+            var funcDict = new Dictionary<string, FuncSig>();
+            foreach (var trap in BdxTraps.GetTraps())
+            {
+                funcDict.TryAdd(
+                    trap.Name,
+                    new FuncSig(
+                        Name: trap.Name,
+                        RetType: ((trap.Flags & 0x40000000) != 0) ? TypeDesc.Int32 : TypeDesc.Void,
+                        ParamTypes: null,
+                        NumIns: trap.Flags & 0xFFFF,
+                        Syscall: (trap.TableIndex, trap.TrapIndex)
+                    )
+                );
+            }
+            foreach (var declaration in declarationseq.declaration())
+            {
+                if (declaration.functionDefinition() is var fd && fd != null && fd.functionBody() != null)
+                {
+                    var (name, retType, argPairs) = GetSignature(fd);
+                    funcDict[name] = new FuncSig(
+                        Name: name,
+                        RetType: retType,
+                        ParamTypes: argPairs.Select(it => it.Type).ToArray(),
+                        NumIns: argPairs.Length
+                    );
+                }
+            }
+
             var cHelper = new CHelper(
+                GetFunc: name => funcDict.TryGetValue(name, out var sig) ? sig : null,
                 GetVar: varName => globalVarRefDict.TryGetValue(varName, out VarRef? expr)
                     ? expr
                     : null,
@@ -122,11 +153,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             );
         }
 
-        private void VisitFunctionDefinition(
-            CPP14Parser.FunctionDefinitionContext functionDefinition,
-            TextWriter codeSeg,
-            TextWriter initCodeSeg,
-            CHelper cHelper)
+        private (string Name, TypeDesc RetType, ArgPair[] Args) GetSignature(
+            CPP14Parser.FunctionDefinitionContext functionDefinition)
         {
             // type
             TypeDesc retType = ReduceTypeDesc1.Reduce(functionDefinition.declSpecifierSeq()
@@ -161,6 +189,20 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             ArgPair[] argPairs = parameterDeclarations
                 .Select(parameterDeclarationToNameAndTypePairVisitor.Reduce)
                 .ToArray();
+
+            return (funcName, retType, argPairs);
+        }
+
+        private void VisitFunctionDefinition(
+            CPP14Parser.FunctionDefinitionContext functionDefinition,
+            TextWriter finalCodeSeg,
+            TextWriter initCodeSeg,
+            CHelper cHelper)
+        {
+            var (funcName, retType, argPairs) = GetSignature(functionDefinition);
+
+            // the body is buffered, because jal needs the frame size, which is known only after the whole body is compiled.
+            var codeSeg = new StringWriter();
 
             var numLocalStackItemsAllocated = 0; // 4 * n bytes
 
@@ -234,6 +276,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
 
             codeSeg.WriteLine("ret");
+
+            // frame = locals (DWORDs) + 2 system DWORDs (count, ret-ip). Every jal in this function uses the same value.
+            var frameSize = numLocalStackItemsAllocated + 2;
+            finalCodeSeg.WriteLine(
+                codeSeg.ToString().Replace(CHelper.FrameSizePlaceholder, frameSize.ToString())
+            );
         }
 
         private CHelper NewChildScope(
@@ -276,7 +324,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     );
                 },
                 DeclareStaticVar: parent.DeclareStaticVar,
-                AllocateStackItems: parent.AllocateStackItems
+                AllocateStackItems: parent.AllocateStackItems,
+                GetFunc: parent.GetFunc
             );
         }
 
@@ -398,7 +447,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     if (expr.Getter != null)
                     {
                         codeSeg.WriteLine(expr.Getter);
-                        codeSeg.WriteLine("drop");
+                        if (expr.Type != TypeDesc.Void)
+                        {
+                            codeSeg.WriteLine("drop");
+                        }
                     }
                 }
                 return;
@@ -407,6 +459,33 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             if (statement.declarationStatement() is var declarationStatement
                 && declarationStatement != null)
             {
+                // `f(1);` or `f();` is ambiguous in C++ grammar and is parsed as a declaration with
+                // no type at all (a valid declaration needs one). Re-parse it as an expression.
+                if (IsDeclarationWithoutType(declarationStatement))
+                {
+                    var text = statement.Start.InputStream.GetText(
+                        new Antlr4.Runtime.Misc.Interval(statement.Start.StartIndex, statement.Stop.StopIndex)
+                    );
+                    var stream = CharStreams.fromString(text.TrimEnd().TrimEnd(';'));
+                    ((CodePointCharStream)stream).name = statement.Start.InputStream.SourceName;
+                    var parser = new CPP14Parser(
+                        new CommonTokenStream(new CPP14Lexer(stream, TextWriter.Null, TextWriter.Null)),
+                        TextWriter.Null,
+                        TextWriter.Null
+                    );
+                    var reparsed = new ExpressionToVarRefVisitor(GetSourceRef, cHelper, ReduceTypeDesc1)
+                        .VisitExpression(parser.expression());
+                    if (reparsed.Getter != null)
+                    {
+                        codeSeg.WriteLine(reparsed.Getter);
+                        if (reparsed.Type != TypeDesc.Void)
+                        {
+                            codeSeg.WriteLine("drop");
+                        }
+                    }
+                    return;
+                }
+
                 new DeclarationStatementForAssignmentVisitor(
                     GetSourceRef,
                     cHelper,
@@ -418,6 +497,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
 
             throw new CompilerException(GetSourceRef(statement), "Unsupported statement");
+        }
+
+        private static bool IsDeclarationWithoutType(CPP14Parser.DeclarationStatementContext declarationStatement)
+        {
+            var simpleDeclaration = declarationStatement.blockDeclaration()?.simpleDeclaration();
+            return simpleDeclaration != null
+                && simpleDeclaration.declSpecifierSeq() == null
+                && simpleDeclaration.initDeclaratorList() != null;
         }
 
         private void WriteStatementJumpStatement(CPP14Parser.JumpStatementContext jumpStatement, WriteHelper writeHelper)

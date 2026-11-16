@@ -12,9 +12,16 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         Func<string, VarRef?> GetVar,
         Func<ArgPair, SourceRef, VarRef> DeclareVar,
         Func<ArgPair, SourceRef, VarRef> DeclareStaticVar,
-        Func<int, int> AllocateStackItems
+        Func<int, int> AllocateStackItems,
+        Func<string, FuncSig?>? GetFunc = null
         )
     {
+        /// <summary>
+        /// Placeholder replaced by the frame size (DWORDs, including 2 system DWORDs) of the calling function
+        /// once the function body has been fully compiled.
+        /// </summary>
+        public const string FrameSizePlaceholder = "@@FRAMESIZE@@";
+
         private readonly IEnumerable<(TypeDesc FromType, TypeDesc ToType, string? Converter)> _knownConverters = GetKnownConverters()
             .ToImmutableArray();
 

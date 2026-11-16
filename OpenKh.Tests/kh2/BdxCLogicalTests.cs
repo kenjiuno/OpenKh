@@ -302,6 +302,13 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void InitcIsGlobalInitializersThenRet()
+        {
+            var s = new BdxCEncoder().EncodeC("int g = 5; void main() { }", "i.c").Bdscript.Replace("\r\n", "\n");
+            Assert.Contains("_initc:\n push 5\n pop.wp g\n ret\n", s);
+        }
+
+        [Fact]
         public void WorkSizeCountsBss()
         {
             var r = new BdxCEncoder().EncodeC("int a; struct S { int x; int y; } s; void f() { }", "w.c");

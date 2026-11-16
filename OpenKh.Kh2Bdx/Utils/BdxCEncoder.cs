@@ -55,7 +55,8 @@ namespace OpenKh.Kh2Bdx.Utils
 
             {
                 writer.WriteLine("_initc:");
-                // _initc has no locals: frame = 2 system DWORDs
+                // _initc: global initializers, then ret. Called by the OBJ_INIT stub (see Bdxio encode-c --header).
+                // It has no locals: frame = 2 system DWORDs
                 writer.WriteLine(result.InitCodeSeg.ToString()?.Replace(CHelper.FrameSizePlaceholder, "2"));
                 writer.WriteLine(" ret");
             }

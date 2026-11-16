@@ -101,8 +101,29 @@ namespace OpenKh.Tests.kh2
                 "sys.c"
             ).Bdscript.Replace("\r\n", "\n");
 
-            Assert.Contains("push 2\n push 1\n syscall 0, 0 ; trap_puti\n", result);
+            // syscall args are pushed first-to-last (verified with bdEmu)
+            Assert.Contains("push 1\n push 2\n syscall 0, 0 ; trap_puti\n", result);
             Assert.Contains("syscall 0, 16 ; trap_random_get\n", result);
+        }
+
+        [Fact]
+        public void JalArgsArePushedLastToFirst()
+        {
+            var s = Compile("int sub(int a, int b) { return a - b; } int f() { return sub(10, 3); }");
+            Assert.Contains(" push 3\n push 10\n jal ", s);
+        }
+
+        [Fact]
+        public void RelationalOperatorsSubtractBeforeSignTest()
+        {
+            var s = Compile("int f(int a, int b) { return a < b; }");
+            Assert.Contains(" push.d.sp 4 ; b\n sub\n sltz\n", s);
+        }
+
+        [Fact]
+        public void ZeroAndVoidPointerConvertToPointer()
+        {
+            Compile("struct V { struct V *n; }; void f() { struct V a; void *v; a.n = 0; v = &a; a.n = v; }");
         }
 
         private static string Compile(string code) =>

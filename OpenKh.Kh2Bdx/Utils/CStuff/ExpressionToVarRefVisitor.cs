@@ -556,6 +556,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                                 lines: CHelper.JoinLines(
                                     rval.Getter,
                                     converter,
+                                    // a < b  <=>  (a - b) < 0, then test the sign of the difference
+                                    lval.Type.Math?.ApplySub,
                                     lines
                                 )
                             );
@@ -1190,8 +1192,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             var lines = new List<string?>();
 
-            for (int x = args.Length - 1; 0 <= x; x--)
+            // Verified with bdEmu (MobileAiExec): syscall args are pushed first-to-last, so the
+            // first argument is the deepest tp slot (trap_puti pushes name, then value).
+            // jal args are pushed last-to-first because the callee pops them into sp slots 0, 4, ...
+            var isSyscall = sig.Syscall != null;
+            for (int i = 0; i < args.Length; i++)
             {
+                var x = isSyscall ? i : args.Length - 1 - i;
                 var assignmentExpression = args[x].assignmentExpression()
                     ?? throw new CompilerException(GetSourceRef(args[x]), "Braced initializer is not supported as an argument");
                 var arg = VisitAssignment(assignmentExpression);

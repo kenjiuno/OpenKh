@@ -92,6 +92,16 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return "";
             }
 
+            // Pointers are plain 4-byte values: allow `p = 0`, `int x = (int)p` and void* <-> T*.
+            static bool IsIntLike(TypeDesc t) => t.PointerDepth == 0 && !t.IsStruct && t.Math == LLMath.IntVer;
+            static bool IsVoidPtr(TypeDesc t) => t.PointerDepth == 1 && t.BaseType == TypeDesc.Void;
+            if ((ToType.PointerDepth > 0 && IsIntLike(FromType))
+                || (FromType.PointerDepth > 0 && IsIntLike(ToType))
+                || (FromType.PointerDepth > 0 && ToType.PointerDepth > 0 && (IsVoidPtr(FromType) || IsVoidPtr(ToType))))
+            {
+                return "";
+            }
+
             var match = _knownConverters.FirstOrDefault(x => x.FromType == FromType && x.ToType == ToType);
             if (match != default)
             {

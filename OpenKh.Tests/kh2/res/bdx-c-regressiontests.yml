@@ -9,6 +9,7 @@ patterns:
      pop.sp 4
      push.d.sp 0 ; a
      push.d.sp 4 ; b
+     sub
      sltz
      jz __max1else
      push.d.sp 4 ; b
@@ -29,6 +30,7 @@ patterns:
      pop.sp 4
      push.d.sp 0 ; a
      push.d.sp 4 ; b
+     sub
      sgtz
      jz __min1else
      push.d.sp 4 ; b
@@ -49,6 +51,7 @@ patterns:
      pop.sp 4
      push.d.sp 0 ; a
      push.d.sp 4 ; b
+     sub.s
      sltz.s
      jz __fmax1else
      push.d.sp 4 ; b
@@ -130,10 +133,12 @@ patterns:
     comparators: ; func comparators
      push 1
      push 2
+     sub
      sltz
      drop
      push 1
      push 2
+     sub
      slez
      drop
      push 1
@@ -148,10 +153,12 @@ patterns:
      drop
      push 1
      push 2
+     sub
      sgtz
      drop
      push 1
      push 2
+     sub
      sgez
      drop
      ret

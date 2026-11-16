@@ -385,6 +385,49 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void SwitchDispatchesWithSubAndBeqz()
+        {
+            var s = Compile("int f(int n) { switch (n) { case 1: return 10; case 2: return 20; default: return 0; } }");
+            // value saved once, compared to each case in order, then default
+            Assert.Contains(" pop.sp 4 ; switch value\n", s);
+            Assert.Contains(" push.d.sp 4 ; switch value\n push 1\n sub\n beqz __f1case0\n", s);
+            Assert.Contains(" push.d.sp 4 ; switch value\n push 2\n sub\n beqz __f1case1\n", s);
+            Assert.Contains(" b __f1default\n", s);
+            Assert.Contains("__f1case0:\n", s);
+            Assert.Contains("__f1endswitch:\n", s);
+        }
+
+        [Fact]
+        public void SwitchWithoutDefaultJumpsToEnd()
+        {
+            var s = Compile("void f(int n) { switch (n) { case 1: break; } }");
+            Assert.Contains(" b __f1endswitch\n", s);
+        }
+
+        [Fact]
+        public void BreakInSwitchLeavesSwitchButContinueGoesToLoop()
+        {
+            var s = Compile("void f() { int i; for (i = 0; i < 3; i++) { switch (i) { case 1: continue; case 2: break; } } }");
+            Assert.Contains(" b __f1continue\n", s);
+            Assert.Contains(" b __f2endswitch\n", s);
+        }
+
+        [Theory]
+        [InlineData("void f() { break; }")]
+        [InlineData("void f() { switch (1) { case 1: continue; } }")]
+        [InlineData("void f() { case 1: ; }")]
+        [InlineData("void f() { default: ; }")]
+        [InlineData("void f(int n) { switch (n) { case 1: break; case 1: break; } }")]
+        [InlineData("void f(int n) { switch (n) { default: break; default: break; } }")]
+        [InlineData("void f(float n) { switch (n) { case 1: break; } }")]
+        [InlineData("void f(int n) { switch (n) { case 1.5: break; } }")]
+        [InlineData("void f() { L: ; }")]
+        public void BadSwitchUse(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
         public void InitcIsGlobalInitializersThenRet()
         {
             var s = new BdxCEncoder().EncodeC("int g = 5; void main() { }", "i.c").Bdscript.Replace("\r\n", "\n");

@@ -550,6 +550,28 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                     return;
                 }
+                else if (selectionStatement.Switch() != null)
+                {
+                    WriteSwitchStatement(selectionStatement, writeHelper);
+                    return;
+                }
+            }
+
+            if (statement.labeledStatement() is { } labeledStatement)
+            {
+                // `case X:` / `default:` of the enclosing switch; goto labels are not supported
+                if (writeHelper.CaseLabels == null || !writeHelper.CaseLabels.TryGetValue(labeledStatement, out var caseLabel))
+                {
+                    throw new CompilerException(
+                        GetSourceRef(labeledStatement),
+                        (labeledStatement.Case() != null || labeledStatement.Default() != null)
+                            ? "case/default label outside of a switch"
+                            : "Labels (goto) are not supported"
+                    );
+                }
+                codeSeg.WriteLine($"{caseLabel}:");
+                WriteStatement(labeledStatement.statement(), writeHelper);
+                return;
             }
 
             if (statement.iterationStatement() is var iterationStatement
@@ -616,6 +638,105 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
 
             throw new CompilerException(GetSourceRef(statement), "Unsupported statement");
+        }
+
+        /// <summary>
+        /// switch (e) { case a: ... default: ... }
+        ///
+        /// The value is stored once in a hidden local, then compared to each case in order
+        /// (`sub` + `beqz`). Bodies keep their source order, so fall-through works as in C.
+        /// </summary>
+        private void WriteSwitchStatement(CPP14Parser.SelectionStatementContext selectionStatement, WriteHelper writeHelper)
+        {
+            var codeSeg = writeHelper.CodeSeg;
+            var cHelper = writeHelper.CHelper;
+            var body = selectionStatement.statement(0);
+
+            var expressionVisitor = new ExpressionToVarRefVisitor(GetSourceRef, cHelper, ReduceTypeDesc1);
+
+            var value = expressionVisitor.Visit(selectionStatement.condition());
+            if (value.Getter == null)
+            {
+                throw new CompilerException(GetSourceRef(selectionStatement), "Need to produce getter");
+            }
+            if (value.Type == TypeDesc.Float32 || value.Type.IsStruct && value.Type.PointerDepth == 0)
+            {
+                throw new CompilerException(GetSourceRef(selectionStatement), $"switch quantity must be an integer, not {value.Type.Display}");
+            }
+            var valueConverter = cHelper.GetConverter(value.Type, TypeDesc.Int32)
+                ?? throw new CompilerException(GetSourceRef(selectionStatement), $"switch quantity must be an integer, not {value.Type.Display}");
+
+            // labels of this switch only (nested switches own theirs)
+            var labeled = new List<CPP14Parser.LabeledStatementContext>();
+            void Collect(Antlr4.Runtime.Tree.IParseTree node)
+            {
+                if (node is CPP14Parser.SelectionStatementContext { } sel && sel.Switch() != null)
+                {
+                    return;
+                }
+                if (node is CPP14Parser.LabeledStatementContext l && (l.Case() != null || l.Default() != null))
+                {
+                    labeled.Add(l);
+                }
+                for (int x = 0; x < node.ChildCount; x++)
+                {
+                    Collect(node.GetChild(x));
+                }
+            }
+            Collect(body);
+
+            var labelGen = writeHelper.NextUniqueLabelGenerator();
+            var endLabel = labelGen("endswitch");
+            var caseLabels = new Dictionary<CPP14Parser.LabeledStatementContext, string>();
+            string? defaultLabel = null;
+            var seen = new HashSet<string>();
+
+            var slot = 4 * cHelper.AllocateStackItems(1);
+            codeSeg.WriteLine(cHelper.JoinLines(value.Getter, valueConverter, $"pop.sp {slot} ; switch value"));
+
+            for (int x = 0; x < labeled.Count; x++)
+            {
+                var l = labeled[x];
+                if (l.Default() != null)
+                {
+                    if (defaultLabel != null)
+                    {
+                        throw new CompilerException(GetSourceRef(l), "Duplicate default label");
+                    }
+                    defaultLabel = caseLabels[l] = labelGen("default");
+                    continue;
+                }
+
+                var caseValue = expressionVisitor.VisitConstantExpression(l.constantExpression());
+                if (caseValue.Getter == null || caseValue.Type == TypeDesc.Float32)
+                {
+                    throw new CompilerException(GetSourceRef(l), "case label must be an integer constant");
+                }
+                var caseConverter = cHelper.GetConverter(caseValue.Type, TypeDesc.Int32)
+                    ?? throw new CompilerException(GetSourceRef(l), "case label must be an integer constant");
+                var caseCode = cHelper.JoinLines(caseValue.Getter, caseConverter);
+                if (!seen.Add(caseCode!))
+                {
+                    throw new CompilerException(GetSourceRef(l), "Duplicate case value");
+                }
+
+                var label = caseLabels[l] = labelGen($"case{x}");
+                codeSeg.WriteLine(cHelper.JoinLines($"push.d.sp {slot} ; switch value", caseCode, "sub", $"beqz {label}"));
+            }
+
+            codeSeg.WriteLine($"b {defaultLabel ?? endLabel}");
+
+            WriteStatement(
+                body,
+                writeHelper with
+                {
+                    CaseLabels = caseLabels,
+                    // break leaves the switch; continue still belongs to the enclosing loop
+                    Loop = new LoopLabels(Break: endLabel, Continue: writeHelper.Loop?.Continue),
+                }
+            );
+
+            codeSeg.WriteLine($"{endLabel}:");
         }
 
         private void WriteReparsedExpressionStatement(ParserRuleContext context, WriteHelper writeHelper)
@@ -818,8 +939,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             {
                 var isBreak = jumpStatement.Break() != null;
                 var loop = writeHelper.Loop
-                    ?? throw new CompilerException(GetSourceRef(jumpStatement), isBreak ? "break outside of a loop" : "continue outside of a loop");
-                codeSeg.WriteLine($"b {(isBreak ? loop.Break : loop.Continue)}");
+                    ?? throw new CompilerException(GetSourceRef(jumpStatement), isBreak ? "break outside of a loop or switch" : "continue outside of a loop");
+                var target = isBreak
+                    ? loop.Break
+                    : loop.Continue ?? throw new CompilerException(GetSourceRef(jumpStatement), "continue outside of a loop");
+                codeSeg.WriteLine($"b {target}");
                 return;
             }
 

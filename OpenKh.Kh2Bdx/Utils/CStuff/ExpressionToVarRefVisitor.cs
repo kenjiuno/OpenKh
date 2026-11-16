@@ -27,6 +27,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             throw new CompilerException(GetSourceRef(conditionContext), "Unsupported condition context");
         }
 
+        public VarRef VisitConstantExpression(ConstantExpressionContext constantExpression)
+        {
+            return VisitConditionalExpression(constantExpression.conditionalExpression());
+        }
+
         public VarRef VisitExpression(ExpressionContext expressionContext)
         {
             if (expressionContext.assignmentExpression() is var assignments

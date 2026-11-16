@@ -12,8 +12,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         int ExpectedOuts,
         Func<Func<string, string>> NextUniqueLabelGenerator,
         CHelper CHelper,
-        LoopLabels? Loop = null
+        LoopLabels? Loop = null,
+        IReadOnlyDictionary<CPP14Parser.LabeledStatementContext, string>? CaseLabels = null
         );
 
-    internal record LoopLabels(string Break, string Continue);
+    /// <param name="Break">where `break` jumps to (end of the loop or switch)</param>
+    /// <param name="Continue">where `continue` jumps to, or null inside a switch that is not in a loop</param>
+    internal record LoopLabels(string Break, string? Continue);
 }

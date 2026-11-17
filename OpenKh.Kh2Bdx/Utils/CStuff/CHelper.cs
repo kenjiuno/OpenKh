@@ -46,61 +46,49 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             Frame?.Allocate(numItems, temp: true, align16: true) ?? AllocateStackItems(numItems);
 
         /// <summary>
-        /// Placeholder of sp[0] as the pointer register of stores through a pointer. The only such instructions
-        /// (`pop.sp.d`, `memcpy.sp.d`) take the pointer from sp[0], so a function that has one gets sp[0] as a
-        /// hidden slot: every other local moves up by a slot (see <see cref="ShiftSpOffsets"/>).
-        /// Otherwise a store into the variable at sp[0] would be lost.
+        /// Placeholders replaced by the byte offsets of two hidden sp slots that hold the pointer and the value of a
+        /// store through a pointer. They are alive for a few instructions with no jal between, so no jal covers them.
+        /// Allocated only if used.
         /// </summary>
-        public const string PointerRegisterPlaceholder = "@@PTRREG@@";
+        public const string StorePointerSlotPlaceholder = "@@STOREPTR@@";
+        public const string StoreValueSlotPlaceholder = "@@STOREVAL@@";
 
         /// <summary>
         /// Store the value on top of tp to *(pointer + offset).
-        /// The pointer expression is evaluated first, then put in the pointer register.
+        ///
+        /// `memcpy 0` (op4) pops a value and then a destination pointer and stores the value as 4 bytes. The value is
+        /// already on tp below the pointer expression, so the two are put in hidden slots to be pushed in the order
+        /// the instruction wants.
         /// </summary>
         internal string PointerStore(string? pointerGetter, int offset)
         {
             return JoinLines(
                 pointerGetter,
-                $"pop.sp {PointerRegisterPlaceholder} ; pointer register",
-                $"pop.sp.d {offset}"
+                $"pop.sp {StorePointerSlotPlaceholder} ; pointer",
+                $"pop.sp {StoreValueSlotPlaceholder} ; value",
+                $"push.d.sp {StorePointerSlotPlaceholder}",
+                offset == 0 ? null : $"push {offset}\nadd",
+                $"push.d.sp {StoreValueSlotPlaceholder}",
+                "memcpy 0"
             )!;
         }
 
         /// <summary>
-        /// Placeholder replaced by the byte offset of a hidden slot, which holds the byte being stored.
-        /// Allocated only if used. It is alive for two instructions, so no jal can see it.
-        /// </summary>
-        public const string ByteTempSlotPlaceholder = "@@BYTETMP@@";
-
-        /// <summary>
         /// Store the low byte of the value on top of tp to *pointer.
         ///
-        /// There is no byte store, so the value is put in a hidden slot and its first byte is copied with a
-        /// 1-byte `memcpy.sp.d`, which takes the destination pointer from the pointer register like `pop.sp.d`.
+        /// `memcpy 1` copies one byte from the source pointer it pops, so the value goes to a hidden slot first
+        /// (the first byte of a little endian word is its low byte).
         /// </summary>
         internal string ByteStore(string? pointerGetter)
         {
             return JoinLines(
                 pointerGetter,
-                $"pop.sp {PointerRegisterPlaceholder} ; pointer register",
-                $"pop.sp {ByteTempSlotPlaceholder} ; byte to store",
-                $"push.sp {ByteTempSlotPlaceholder}",
-                "memcpy.sp.d 1, 0"
+                $"pop.sp {StorePointerSlotPlaceholder} ; pointer",
+                $"pop.sp {StoreValueSlotPlaceholder} ; byte to store",
+                $"push.d.sp {StorePointerSlotPlaceholder}",
+                $"push.sp {StoreValueSlotPlaceholder}",
+                "memcpy 1"
             )!;
-        }
-
-        /// <summary>Move every sp offset in the code up by a slot, to make room for the pointer register at sp[0].</summary>
-        internal static string ShiftSpOffsets(string body)
-        {
-            // push.sp / push.d.sp / pop.sp N   and   memcpy.sp size, N   (the *.d forms are relative to a pointer)
-            return System.Text.RegularExpressions.Regex.Replace(
-                body,
-                @"^(\s*(?:push\.sp|push\.d\.sp|pop\.sp) )(\d+)|^(\s*memcpy\.sp \d+, )(\d+)",
-                m => m.Groups[1].Success
-                    ? m.Groups[1].Value + (int.Parse(m.Groups[2].Value) + 4)
-                    : m.Groups[3].Value + (int.Parse(m.Groups[4].Value) + 4),
-                System.Text.RegularExpressions.RegexOptions.Multiline
-            );
         }
 
         private readonly IEnumerable<(TypeDesc FromType, TypeDesc ToType, string? Converter)> _knownConverters = GetKnownConverters()

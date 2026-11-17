@@ -257,32 +257,32 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
-        public void PointerStoreUsesSp0AsPointerRegister()
+        public void PointerStoreIsMemcpyOfTheValueToThePointer()
         {
             var s = Compile("struct V { int x; int y; }; void f(struct V *p) { p->y = 3; }");
-            // value is dup'ed, the pointer goes to sp[0] (a slot of its own), p moves up to sp[4]
-            Assert.Contains("f: ; func f\n pop.sp 4\n", s);
+            // the value is dup'ed; pointer and value go to hidden slots to be pushed destination first
             Assert.Contains(
-                " push 3\n dup\n push.d.sp 4 ; p\n pop.sp 0 ; pointer register\n pop.sp.d 4\n drop\n",
+                " push 3\n dup\n push.d.sp 0 ; p\n pop.sp 4 ; pointer\n pop.sp 8 ; value\n push.d.sp 4\n push 4\n add\n push.d.sp 8\n memcpy 0\n drop\n",
                 s
             );
             Assert.DoesNotContain("@@", s);
+            Assert.DoesNotContain("pop.sp.d", s);
         }
 
         [Fact]
-        public void PointerStoreIntoTheVariableAtSp0IsKept()
+        public void PointerStoreDoesNotBorrowTheVariableAtSp0()
         {
-            // the pointer register must not be a variable: a store into `a` would be undone when it is restored
             var s = Compile("void f() { int a; int *p = &a; *p = 5; }");
-            Assert.Contains(" push.sp 4 ; &a\n", s);
+            Assert.Contains(" push.sp 0 ; &a\n", s);
+            Assert.DoesNotContain(" pop.sp 0 ; pointer", s);
         }
 
         [Fact]
-        public void CharStoreCopiesOneByteThroughThePointerRegister()
+        public void CharStoreCopiesOneByteWithMemcpy1()
         {
             var s = Compile("void f(char *c) { *c = 1; }");
             Assert.Contains(
-                " push.d.sp 4 ; c\n pop.sp 0 ; pointer register\n pop.sp 8 ; byte to store\n push.sp 8\n memcpy.sp.d 1, 0\n",
+                " push.d.sp 0 ; c\n pop.sp 4 ; pointer\n pop.sp 8 ; byte to store\n push.d.sp 4\n push.sp 8\n memcpy 1\n",
                 s
             );
         }
@@ -390,7 +390,7 @@ namespace OpenKh.Tests.kh2
         public void PointerStoreThroughIntPointer()
         {
             var s = Compile("void f(int *q) { *q = 1; *q += 2; }");
-            Assert.Contains("pop.sp.d 0", s);
+            Assert.Contains("memcpy 0", s);
         }
 
         [Theory]
@@ -408,11 +408,11 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
-        public void PointerStoreHiddenSlotCountedInFrame()
+        public void PointerStoreHiddenSlotsAreNotInTheFrameOfACall()
         {
             var s = Compile("void g() { } void f(int *q, int r) { *q = 1; g(); }");
-            // q, r + hidden save slot = 3 locals, + 2 system DWORDs = 5, aligned to 8
-            Assert.Contains("jal 8, g", s);
+            // the hidden slots are dead at the jal: q, r + 2 system DWORDs = 4
+            Assert.Contains("jal 4, g", s);
         }
 
         [Fact]
@@ -491,7 +491,7 @@ namespace OpenKh.Tests.kh2
         {
             var s = Compile("struct P { int x; }; void f(struct P *p, struct P *q) { *p = *q; }");
             Assert.Contains("push.d.pop 0", s);
-            Assert.Contains("pop.sp.d 0", s);
+            Assert.Contains("memcpy 0", s);
         }
 
         [Fact]

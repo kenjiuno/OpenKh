@@ -64,20 +64,19 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             return $"@@FRAMESIZE:{_jalTops.Count - 1}@@";
         }
 
-        /// <summary>One more DWORD above everything ever used, for the sp[0] save slot of pointer stores.</summary>
+        /// <summary>One more DWORD above everything ever used, for the hidden slots of stores through a pointer.</summary>
         public int ReserveAboveHighWater()
         {
             return HighWater++;
         }
 
         /// <param name="alwaysAtLeast">every jal covers at least this many DWORDs</param>
-        /// <param name="extraSlots">DWORDs added below the locals (the pointer register at sp[0])</param>
-        public string ResolveJalFrameSizes(string body, int alwaysAtLeast, int extraSlots = 0)
+        public string ResolveJalFrameSizes(string body, int alwaysAtLeast)
         {
             return Regex.Replace(
                 body,
                 @"@@FRAMESIZE:(\d+)@@",
-                m => CHelper.FrameSizeOf(Math.Max(_jalTops[int.Parse(m.Groups[1].Value)], alwaysAtLeast) + extraSlots).ToString()
+                m => CHelper.FrameSizeOf(Math.Max(_jalTops[int.Parse(m.Groups[1].Value)], alwaysAtLeast)).ToString()
             );
         }
     }

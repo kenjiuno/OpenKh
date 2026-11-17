@@ -408,24 +408,18 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             codeSeg.WriteLine("ret");
 
             var body = codeSeg.ToString();
-            // Hidden slot of char stores for the byte (alive for two instructions, so no jal covers it).
-            if (body.Contains(CHelper.ByteTempSlotPlaceholder))
+            // Hidden slots of stores through a pointer (alive for a few instructions, so no jal covers them).
+            foreach (var placeholder in new[] { CHelper.StorePointerSlotPlaceholder, CHelper.StoreValueSlotPlaceholder })
             {
-                var byteSlot = frame.ReserveAboveHighWater();
-                body = body.Replace(CHelper.ByteTempSlotPlaceholder, (4 * byteSlot).ToString());
-            }
-
-            // sp[0] is the pointer register of stores through a pointer: the locals move up by a slot.
-            var extraSlots = 0;
-            if (body.Contains(CHelper.PointerRegisterPlaceholder))
-            {
-                body = CHelper.ShiftSpOffsets(body).Replace(CHelper.PointerRegisterPlaceholder, "0");
-                extraSlots = 1;
+                if (body.Contains(placeholder))
+                {
+                    body = body.Replace(placeholder, (4 * frame.ReserveAboveHighWater()).ToString());
+                }
             }
 
             // Each jal covers what is alive at that point: locals + live temporaries + 2 system DWORDs (count, ret-ip),
             // aligned to 16 bytes.
-            finalCodeSeg.WriteLine(frame.ResolveJalFrameSizes(body, 0, extraSlots));
+            finalCodeSeg.WriteLine(frame.ResolveJalFrameSizes(body, 0));
         }
 
         private CHelper NewChildScope(

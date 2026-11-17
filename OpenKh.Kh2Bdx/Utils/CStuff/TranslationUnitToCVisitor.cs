@@ -244,7 +244,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         {
             writer.WriteLine($"{path}:");
 
-            if (type.IsByteArray)
+            if (type.IsPackedArray)
             {
                 // the bytes are packed: a label and a slot for each 4 of them
                 for (int x = 0; x < StructVar.SlotsOf(type); x++)

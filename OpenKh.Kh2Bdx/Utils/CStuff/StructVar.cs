@@ -13,8 +13,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
     internal static class StructVar
     {
         /// <summary>Number of 4-byte slots that a variable of the type occupies.</summary>
-        internal static int SlotsOf(TypeDesc type) => type.IsByteArray
-            ? (Math.Max(type.ArrayLength, 0) + 3) / 4 // char a[N] packs 4 bytes in a slot
+        internal static int SlotsOf(TypeDesc type) => type.IsPackedArray
+            ? (Math.Max(type.ArrayLength, 0) * type.ElementType!.Size + 3) / 4 // char a[N] packs 4 bytes in a slot, short a[N] 2 elements
             : type.IsArray
                 ? Math.Max(type.ArrayLength, 0) * SlotsOf(type.ElementType!)
                 : (type.Size == 0) ? 1 : (type.Size + 3) / 4;
@@ -23,7 +23,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// What `p + 1` adds to a pointer to the type, and the distance between the elements of an array of it, in bytes.
         /// A char is one byte; everything else takes whole slots.
         /// </summary>
-        internal static int StrideOf(TypeDesc type) => type.IsByte ? 1 : 4 * SlotsOf(type);
+        internal static int StrideOf(TypeDesc type) => type.IsPacked ? type.Size : 4 * SlotsOf(type);
 
         /// <summary>
         /// Create VarRef of the variable. Struct variable is expanded to its members, and array variable to its elements, recursively.
@@ -39,7 +39,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             Func<int, string, string> pointer,
             Func<int, string, PointerTarget?>? target = null)
         {
-            if (type.IsByteArray)
+            if (type.IsPackedArray)
             {
                 // the bytes are packed in word slots; the slots are what can be read, written and labeled
                 var slots = Enumerable.Range(0, SlotsOf(type))

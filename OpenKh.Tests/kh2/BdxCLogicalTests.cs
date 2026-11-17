@@ -270,6 +270,48 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void ShortStoreCopiesTwoBytes()
+        {
+            var s = Compile("void f(short *c) { *c = 1; }");
+            Assert.Contains(" push.d.sp 0 ; c\n push 1\n push 65535\n and\n pop.sp 4\n push.sp 4\n memcpy 2\n", s);
+        }
+
+        [Fact]
+        public void ShortLoadKeepsTwoBytesAndExtendsTheSign()
+        {
+            var s = Compile("int f(short *c) { return *c; }");
+            Assert.Contains(" push.d.pop 0 ; deref short\n push 65535\n and\n push 32768\n xor\n push 32768\n sub\n", s);
+            var u = Compile("int f(unsigned short *c) { return *c; }");
+            Assert.Contains(" push.d.pop 0 ; deref short\n push 65535\n and\n", u);
+            Assert.DoesNotContain("xor", u);
+        }
+
+        [Fact]
+        public void ShortArrayPacksTwoElementsInASlot()
+        {
+            // s: 2 slots (3 shorts), then n
+            var s = Compile("void f() { short s[3]; int n; n = 1; }");
+            Assert.Contains(" pop.sp 8 ; n\n", s);
+            var p = Compile("short *f(short *c) { return c + 3; }");
+            Assert.Contains(" push 3\n push 2\n mul\n add\n", p);
+        }
+
+        [Fact]
+        public void BracedShortInitializerPacksLittleEndianPairs()
+        {
+            var s = Compile("void f() { short h[3] = { 1, -2, 7 }; }");
+            // 0xFFFE0001, 0x0007
+            Assert.Contains(" push -131071\n pop.sp 0 ; h.0\n push 7\n pop.sp 4 ; h.1\n", s);
+        }
+
+        [Fact]
+        public void SizeofShortArrayIsTwoBytesPerElement()
+        {
+            var s = Compile("int f() { short h[5]; return sizeof(h); }");
+            Assert.Contains(" push 10\n", s);
+        }
+
+        [Fact]
         public void GotoJumpsToAFunctionLabel()
         {
             var s = Compile("int f(int a) { if (a) { goto out; } a = 1; out: return a; }");
@@ -580,12 +622,6 @@ namespace OpenKh.Tests.kh2
             Assert.Contains("jal 4, g", s);
         }
 
-        [Theory]
-        [InlineData("void f(short *c) { *c = 1; }")]
-        public void PointerStoreOfSubWordIsRejected(string code)
-        {
-            Assert.ThrowsAny<Exception>(() => Compile(code));
-        }
 
         [Fact]
         public void GlobalStructInitializerGoesToInitc()
@@ -981,8 +1017,6 @@ namespace OpenKh.Tests.kh2
         }
 
         [Theory]
-        [InlineData("void f() { short s[2]; }")]
-        [InlineData("struct S { short c[3]; }; void f() { }")]
         [InlineData("void f() { int a[0]; }")]
         [InlineData("void f() { int a[-1]; }")]
         [InlineData("void f(int n) { int a[n]; }")]
@@ -996,7 +1030,6 @@ namespace OpenKh.Tests.kh2
         [InlineData("void f() { int a[2] = 1; }")]
         [InlineData("void f() { int a[2]; float x; a[x] = 1; }")]
         [InlineData("void f() { int a; a[0] = 1; }")]
-        [InlineData("void f() { short *s; s[1] = 1; }")]
         [InlineData("void f() { char s[2] = \"abc\"; }")]
         [InlineData("void f() { char s[2] = { 1, 2, 3 }; }")]
         [InlineData("void f(int n) { char s[2] = { n }; }")]

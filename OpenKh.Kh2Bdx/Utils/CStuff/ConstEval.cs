@@ -146,7 +146,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 || elementType.PointerDepth != 0
                 || (elementType.IsStruct && elementType.Members != null)
                 || elementType.Size == 4
-                || elementType.IsByte; // char a[N]: the bytes are packed in word slots
+                || elementType.IsPacked; // char a[N], short a[N]: packed in word slots
             if (!wordSized)
             {
                 throw new CompilerException(

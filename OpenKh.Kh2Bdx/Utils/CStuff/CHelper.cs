@@ -79,8 +79,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// the stored value on tp (it is the value of the assignment).
         /// A statement that does not use the value drops these extras, see <see cref="WithoutStoreResult"/>.
         /// </summary>
-        internal static string StoreTail(PointerTarget target) => target.IsByte
-            ? string.Join("\n", $"pop.sp {StoreValueSlotPlaceholder}", $"push.sp {StoreValueSlotPlaceholder}", "memcpy 1", $"push.d.sp {StoreValueSlotPlaceholder}")
+        internal static string StoreTail(PointerTarget target) => target.Size < 4
+            ? string.Join("\n", $"pop.sp {StoreValueSlotPlaceholder}", $"push.sp {StoreValueSlotPlaceholder}", $"memcpy {target.Size}", $"push.d.sp {StoreValueSlotPlaceholder}")
             : string.Join("\n", "dup", $"pop.sp {StoreValueSlotPlaceholder}", "memcpy 0", $"push.d.sp {StoreValueSlotPlaceholder}");
 
         /// <summary>
@@ -92,7 +92,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             var lines = code.Split('\n').Select(it => it.TrimEnd()).ToList();
             if (lines.Count < 2
                 || lines[^1] != $"push.d.sp {StoreValueSlotPlaceholder}"
-                || lines[^2] is not ("memcpy 0" or "memcpy 1"))
+                || lines[^2] is not ("memcpy 0" or "memcpy 1" or "memcpy 2"))
             {
                 return null;
             }
@@ -114,20 +114,20 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         }
 
         /// <summary>
-        /// Store the low byte of the value on top of tp to *pointer.
+        /// Store the low byte (size 1) or the low 2 bytes (size 2) of the value on top of tp to *pointer.
         ///
-        /// `memcpy 1` copies one byte from the source pointer it pops, so the value goes to a hidden slot first
-        /// (the first byte of a little endian word is its low byte).
+        /// `memcpy 1` / `memcpy 2` copies bytes from the source pointer it pops, so the value goes to a hidden slot
+        /// first (the first bytes of a little endian word are its low ones).
         /// </summary>
-        internal string ByteStore(string? pointerGetter)
+        internal string PackedStore(string? pointerGetter, int size)
         {
             return JoinLines(
                 pointerGetter,
                 $"pop.sp {StorePointerSlotPlaceholder} ; pointer",
-                $"pop.sp {StoreValueSlotPlaceholder} ; byte to store",
+                $"pop.sp {StoreValueSlotPlaceholder} ; value to store",
                 $"push.d.sp {StorePointerSlotPlaceholder}",
                 $"push.sp {StoreValueSlotPlaceholder}",
-                "memcpy 1"
+                $"memcpy {size}"
             )!;
         }
 
@@ -268,11 +268,6 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 throw new CompilerException(sourceRef, $"Subscripted value is neither an array nor a pointer: {type.Display}");
             }
 
-            if (!type.IsArray && type.PointerDepth == 1 && type.BaseType is { IsStruct: false, Size: 2 })
-            {
-                throw new CompilerException(sourceRef, $"Indexing {type.Display} is not supported: memory is word based");
-            }
-
             if (index.Getter == null || index.Type.PointerDepth != 0 || index.Type.IsStruct || index.Type.Math != LLMath.IntVer)
             {
                 throw new CompilerException(sourceRef, "Array index must be an integer");
@@ -323,7 +318,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 {
                     throw new CompilerException(sourceRef, $"sizeof of an array of unknown length: {type.Display}");
                 }
-                return type.IsByteArray ? type.ArrayLength : type.ArrayLength * StructVar.StrideOf(type.ElementType!);
+                return type.IsPackedArray ? type.ArrayLength * type.ElementType!.Size : type.ArrayLength * StructVar.StrideOf(type.ElementType!);
             }
 
             if (type.PointerDepth != 0)
@@ -390,21 +385,22 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     );
                 }
 
-                if (newType.IsByte)
+                if (newType.IsPacked)
                 {
-                    // there is no byte load: read the word at the address and keep its lowest byte
+                    // there is no byte or half word load: read the word at the address and keep its low bytes
+                    var signed = newType == TypeDesc.Int8 || newType == TypeDesc.Int16;
                     var load = JoinLines(
-                        "push.d.pop 0 ; deref char",
-                        "push 255",
+                        newType.IsByte ? "push.d.pop 0 ; deref char" : "push.d.pop 0 ; deref short",
+                        newType.IsByte ? "push 255" : "push 65535",
                         "and",
-                        newType == TypeDesc.Int8 ? "push 128\nxor\npush 128\nsub" : null
+                        !signed ? null : newType.IsByte ? "push 128\nxor\npush 128\nsub" : "push 32768\nxor\npush 32768\nsub"
                     );
                     return new VarRef(
                         Type: newType,
                         Getter: JoinLines(lval.Getter, load),
-                        Setter: ByteStore(lval.Getter),
+                        Setter: PackedStore(lval.Getter, newType.Size),
                         GetPointer: lval.Getter,
-                        Target: new PointerTarget(lval.Getter!, load, IsByte: true)
+                        Target: new PointerTarget(lval.Getter!, load, newType.Size)
                     );
                 }
 
@@ -487,7 +483,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             void Copy(VarRef to, VarRef from)
             {
-                if (to.Type.IsByteArray)
+                if (to.Type.IsPackedArray)
                 {
                     // the packed bytes are copied as whole slots
                     for (int x = 0; x < to.Slots!.Count; x++)
@@ -528,7 +524,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// <summary>The scalar members of a struct value in slot order (nested structs are flattened).</summary>
         internal IEnumerable<VarRef> StructLeaves(VarRef value)
         {
-            if (value.Type.IsByteArray)
+            if (value.Type.IsPackedArray)
             {
                 foreach (var slot in value.Slots!)
                 {

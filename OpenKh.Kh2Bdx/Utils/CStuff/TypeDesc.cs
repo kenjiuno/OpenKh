@@ -33,6 +33,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// <summary>An array of char: its bytes are packed, 4 in a slot.</summary>
         public bool IsByteArray => ElementType is { IsByte: true };
 
+        /// <summary>short / unsigned short as a value</summary>
+        public bool IsShort => PointerDepth == 0 && !IsStruct && ElementType == null && Size == 2;
+
+        /// <summary>char or short: smaller than a slot, so it is read with a mask and written with a 1 or 2 byte memcpy</summary>
+        public bool IsPacked => IsByte || IsShort;
+
+        /// <summary>An array of char or short: its elements are packed in the slots.</summary>
+        public bool IsPackedArray => ElementType is { IsPacked: true };
+
         public string Display => IsArray
             ? $"{ElementType!.Display}[{(0 <= ArrayLength ? ArrayLength.ToString() : "")}]"
             : $"{BaseName}{new string('*', PointerDepth)}";

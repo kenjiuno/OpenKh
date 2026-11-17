@@ -33,6 +33,6 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
     /// </summary>
     /// <param name="Address">code that pushes the address of the variable</param>
     /// <param name="Load">code that replaces the address on tp with the value</param>
-    /// <param name="IsByte">one byte (char): stored with `memcpy 1` from a slot</param>
-    internal record PointerTarget(string Address, string Load, bool IsByte = false);
+    /// <param name="Size">4, or 1 / 2 for a char / short: stored with `memcpy 1` / `memcpy 2` from a slot</param>
+    internal record PointerTarget(string Address, string Load, int Size = 4);
 }

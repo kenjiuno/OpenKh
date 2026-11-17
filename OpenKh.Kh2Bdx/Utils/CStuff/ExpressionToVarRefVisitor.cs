@@ -1358,7 +1358,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     var add = lval.Type.Math?.ApplyAdd ?? throw new CompilerException(GetSourceRef(innerPostfixExpression), $"Addition not supported for type {lval.Type.Display}");
 
                     // a++, a--: the value is the old one
-                    if (lval.Target is { IsByte: false } target)
+                    if (lval.Target is { Size: 4 } target)
                     {
                         // address; old value; keep a copy of it in the slot; store the new one; read the copy back
                         return new VarRef(

@@ -255,9 +255,9 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             var clauses = list.initializerList()?.initializerClause()
                 ?? Array.Empty<CPP14Parser.InitializerClauseContext>();
 
-            if (target.Type.IsByteArray)
+            if (target.Type.IsPackedArray)
             {
-                // char s[8] = { 'a', 'b', 0 };  constant bytes, the rest are zero
+                // char s[8] = { 'a', 0 };  short h[4] = { 1, 2 };  constants, the rest are zero
                 var bytes = new List<byte>();
                 var length = target.Type.ArrayLength;
                 if (length < clauses.Length)
@@ -269,9 +269,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     if (clause.bracedInitList() != null || VisitInitializerClause(clause)?.Getter is not { } code
                         || !ConstEval.TryEvaluateCode(code, out var value))
                     {
-                        throw new CompilerException(GetSourceRef(clause), "An element of a char array must be a constant");
+                        throw new CompilerException(GetSourceRef(clause), "An element of a char or short array must be a constant");
                     }
                     bytes.Add((byte)value);
+                    if (target.Type.ElementType!.IsShort)
+                    {
+                        bytes.Add((byte)(value >> 8));
+                    }
                 }
                 WriteBytes(target, bytes.ToArray(), writeTo);
                 return;
@@ -432,7 +436,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
         private void WriteZero(VarRef target, TextWriter writeTo)
         {
-            if (target.Type.IsByteArray)
+            if (target.Type.IsPackedArray)
             {
                 WriteBytes(target, Array.Empty<byte>(), writeTo);
                 return;

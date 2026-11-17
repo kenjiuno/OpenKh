@@ -1100,8 +1100,43 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             throw new CompilerException(GetSourceRef(typeSpecifierSeq), "Unsupported type specifier seq");
         }
 
+        /// <summary>
+        /// `sizeof(type)`, `sizeof(expr)` and `sizeof expr`: a constant. The operand is not evaluated.
+        /// </summary>
+        private VarRef VisitSizeof(UnaryExpressionContext unaryExpression)
+        {
+            var sourceRef = GetSourceRef(unaryExpression);
+            TypeDesc type;
+
+            if (unaryExpression.theTypeId() is { } theTypeId)
+            {
+                // `sizeof(x)` also parses as a type id when x is a variable
+                var text = theTypeId.Start.InputStream.GetText(new Antlr4.Runtime.Misc.Interval(theTypeId.Start.StartIndex, theTypeId.Stop.StopIndex));
+                var isName = System.Text.RegularExpressions.Regex.IsMatch(text, @"^[A-Za-z_]\w*$")
+                    && text is not ("int" or "char" or "short" or "long" or "float" or "double" or "void" or "signed" or "unsigned");
+                type = isName && CHelper.GetVar(text) is { } variable
+                    ? variable.Type
+                    : VisitTheTypeId(theTypeId);
+            }
+            else if (unaryExpression.unaryExpression() is { } operand)
+            {
+                type = VisitUnaryExpression(operand).Type;
+            }
+            else
+            {
+                throw new CompilerException(sourceRef, "Unsupported sizeof");
+            }
+
+            return new VarRef(Type: TypeDesc.Int32, Getter: $"push {CHelper.SizeOfType(type, sourceRef)}");
+        }
+
         private VarRef VisitUnaryExpression(UnaryExpressionContext unaryExpression)
         {
+            if (unaryExpression.Sizeof() != null)
+            {
+                return VisitSizeof(unaryExpression);
+            }
+
             if (unaryExpression.postfixExpression() is var postfixExpression
                 && postfixExpression != null)
             {

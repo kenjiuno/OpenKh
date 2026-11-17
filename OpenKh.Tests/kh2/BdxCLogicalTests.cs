@@ -269,6 +269,57 @@ namespace OpenKh.Tests.kh2
             Assert.DoesNotContain("pop.sp.d", s);
         }
 
+        [Theory]
+        [InlineData("int", 4)]
+        [InlineData("char", 1)]
+        [InlineData("short", 2)]
+        [InlineData("float", 4)]
+        [InlineData("char *", 4)]
+        [InlineData("struct P", 8)]
+        [InlineData("struct P *", 4)]
+        public void SizeofTypeIsAConstant(string type, int expected)
+        {
+            var s = Compile($"struct P {{ int x; int y; }}; int f() {{ return sizeof({type}); }}");
+            Assert.Contains($" push {expected}\n", s);
+        }
+
+        [Fact]
+        public void SizeofVariableAndArrays()
+        {
+            var s = Compile("int f() { int a[5]; char c[13]; int m[2][3]; return sizeof(a) + sizeof c + sizeof(m) + sizeof(m[0]); }");
+            // 20, 13 (a char array is its length), 24, 12
+            Assert.Contains(" push 20\n", s);
+            Assert.Contains(" push 13\n", s);
+            Assert.Contains(" push 24\n", s);
+            Assert.Contains(" push 12\n", s);
+        }
+
+        [Fact]
+        public void SizeofDoesNotEvaluateItsOperand()
+        {
+            var s = Compile("int f(int x) { return sizeof(x++); }");
+            // only the parameter pop and the constant: no increment code
+            Assert.Contains("f: ; func f\n pop.sp 0\n push 4\n ret\n", s);
+        }
+
+        [Fact]
+        public void SizeofIsAConstantExpression()
+        {
+            var s = Compile("struct P { int x; int y; }; int g = sizeof(struct P); int a[sizeof(int) * 2]; void f() { a[7] = 1; }");
+            Assert.Contains("_initc:\n push 8\n pop.wp g\n ret\n", s);
+            // a has 8 elements
+            Assert.ThrowsAny<Exception>(() => Compile("int a[sizeof(int) * 2]; void f() { a[8] = 1; }"));
+        }
+
+        [Theory]
+        [InlineData("int f() { return sizeof(void); }")]
+        [InlineData("struct S; int f() { return sizeof(struct S); }")]
+        [InlineData("int f(int a[]) { int b[] ; return sizeof(b); }")]
+        public void BadSizeof(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
         [Fact]
         public void LogicalAndSkipsTheRightSideWhenTheLeftIsZero()
         {

@@ -311,6 +311,39 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             return Deref(new VarRef(Type: type, Getter: address, GetPointer: address), sourceRef);
         }
 
+        /// <summary>
+        /// sizeof in bytes. A char array is its length. Everything else follows the layout: scalars and pointers are
+        /// their size, a struct is its slots, and an array is its length times the distance between its elements.
+        /// </summary>
+        internal int SizeOfType(TypeDesc type, SourceRef sourceRef)
+        {
+            if (type.IsArray)
+            {
+                if (type.ArrayLength < 0)
+                {
+                    throw new CompilerException(sourceRef, $"sizeof of an array of unknown length: {type.Display}");
+                }
+                return type.IsByteArray ? type.ArrayLength : type.ArrayLength * StructVar.StrideOf(type.ElementType!);
+            }
+
+            if (type.PointerDepth != 0)
+            {
+                return 4;
+            }
+
+            if (type.IsStruct && type.Members == null)
+            {
+                throw new CompilerException(sourceRef, $"sizeof of an incomplete type: {type.Display}");
+            }
+
+            if (type.Size == 0)
+            {
+                throw new CompilerException(sourceRef, $"sizeof of {type.Display}");
+            }
+
+            return type.Size;
+        }
+
         internal VarRef Deref(VarRef lval, SourceRef sourceRef)
         {
             if (lval.Type.IsArray)

@@ -1,0 +1,41 @@
+// bdEmu e2e: ++/-- and assignment operators on variables reached through pointers (address first, then memcpy), values of ++a / a++
+struct V { int x; int y; };
+int g[4];
+void main() {
+  int a = 5;
+  int b;
+  int arr[3];
+  struct V v;
+  struct V *p = &v;
+  int *q = arr;
+  char s[4];
+  char *c = s;
+  b = a++;
+  trap_puti("post=", b * 100 + a);
+  b = ++a;
+  trap_puti("pre=", b * 100 + a);
+  b = a--;
+  trap_puti("postd=", b * 100 + a);
+  b = --a;
+  trap_puti("pred=", b * 100 + a);
+  p->x = 10; p->y = 20;
+  b = p->x++;
+  trap_puti("pp=", b * 100 + p->x);
+  b = ++p->y;
+  trap_puti("pr=", b * 100 + p->y);
+  p->x += 5; p->y *= 2;
+  trap_puti("cmp=", p->x * 100 + p->y);
+  b = (p->x = 7);
+  trap_puti("as=", b * 100 + p->x);
+  *q = 3; q[1] = 4; q[2] = *q + q[1];
+  *q += 10; q[1]++; ++q[2];
+  trap_puti("arr=", arr[0] * 10000 + arr[1] * 100 + arr[2]);
+  g[2] = 9; g[2]--;
+  trap_puti("g=", g[2]);
+  c[0] = 'a'; c[1] = 'b';
+  c[0]++; c[1] += 2;
+  b = c[0]++;
+  trap_puti("ch=", b * 1000 + c[0] * 10 + c[1] - 'a' * 10);
+  p->x = p->y = 4;
+  trap_puti("chain=", p->x * 10 + p->y);
+}

@@ -784,6 +784,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// <summary>Evaluate and discard.</summary>
         private static void WriteExpressionStatement(VarRef expr, WriteHelper writeHelper)
         {
+            if (expr.Getter != null && CHelper.WithoutStoreResult(expr.Getter) is { } storeOnly)
+            {
+                // a store through a pointer whose value is not used: `address; value; memcpy`
+                writeHelper.CodeSeg.WriteLine(storeOnly);
+                return;
+            }
+
             if (expr.DiscardCode != null)
             {
                 // unused struct result: the call leaves a pointer on tp, which is dropped

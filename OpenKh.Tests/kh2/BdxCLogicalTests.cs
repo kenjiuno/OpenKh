@@ -262,11 +262,43 @@ namespace OpenKh.Tests.kh2
             var s = Compile("struct V { int x; int y; }; void f(struct V *p) { p->y = 3; }");
             // the value is dup'ed; pointer and value go to hidden slots to be pushed destination first
             Assert.Contains(
-                " push 3\n dup\n push.d.sp 0 ; p\n pop.sp 4 ; pointer\n pop.sp 8 ; value\n push.d.sp 4\n push 4\n add\n push.d.sp 8\n memcpy 0\n drop\n",
+                " push.d.sp 0 ; p\n push 4\n add\n push 3\n memcpy 0\n",
                 s
             );
             Assert.DoesNotContain("@@", s);
             Assert.DoesNotContain("pop.sp.d", s);
+        }
+
+        [Fact]
+        public void CompoundAssignmentThroughPointerEvaluatesTheAddressOnce()
+        {
+            var s = Compile("void f(int *q) { *q += 2; }");
+            // address, dup, load, operand, op, store: as real data does
+            Assert.Contains(" push.d.sp 0 ; q\n dup\n push.d.pop 0 ; deref\n push 2\n add\n memcpy 0\n", s);
+        }
+
+        [Fact]
+        public void PostIncrementThroughPointerStatementIsAddressLoadAddStore()
+        {
+            var s = Compile("void f(int *q) { (*q)++; }");
+            Assert.Contains(" push.d.sp 0 ; q\n dup\n push.d.pop 0 ; deref\n push 1\n add\n memcpy 0\n", s);
+            Assert.DoesNotContain("drop", s);
+        }
+
+        [Fact]
+        public void AssignmentThroughPointerKeepsTheValueWhenItIsUsed()
+        {
+            var s = Compile("int f(int *q) { return *q = 3; }");
+            Assert.Contains(" push.d.sp 0 ; q\n push 3\n dup\n pop.sp 4\n memcpy 0\n push.d.sp 4\n", s);
+        }
+
+        [Fact]
+        public void PreIncrementIsTheNewValueAndPostIncrementTheOldOne()
+        {
+            var pre = Compile("int f(int a) { return ++a; }");
+            Assert.Contains(" push.d.sp 0 ; a\n push 1\n add\n dup\n pop.sp 0 ; a\n", pre);
+            var post = Compile("int f(int a) { return a++; }");
+            Assert.Contains(" push.d.sp 0 ; a\n dup\n push 1\n add\n pop.sp 0 ; a\n", post);
         }
 
         [Fact]
@@ -282,7 +314,7 @@ namespace OpenKh.Tests.kh2
         {
             var s = Compile("void f(char *c) { *c = 1; }");
             Assert.Contains(
-                " push.d.sp 0 ; c\n pop.sp 4 ; pointer\n pop.sp 8 ; byte to store\n push.d.sp 4\n push.sp 8\n memcpy 1\n",
+                " push.d.sp 0 ; c\n push 1\n push 255\n and\n pop.sp 4\n push.sp 4\n memcpy 1\n",
                 s
             );
         }

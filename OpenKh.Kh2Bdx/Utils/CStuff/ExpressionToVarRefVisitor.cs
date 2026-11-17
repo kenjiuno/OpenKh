@@ -123,18 +123,28 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                 // The value of an assignment expression is the stored value: compute it,
                 // `dup` it, and pop one copy into the target. One copy stays on tp.
-                VarRef Store(string? prefix, string? lines)
+                // A variable reached through a pointer is stored with `memcpy` like real data does: the address is
+                // evaluated first and pushed, then the value.
+                VarRef Store(bool compound, string? rvalCode, string? lines)
                 {
                     return new VarRef(
                         Type: lval.Type,
-                        Getter: CHelper.JoinLines(prefix, lines, "dup", lval.Setter),
+                        Getter: lval.Target is { } target
+                            ? CHelper.JoinLines(
+                                target.Address,
+                                compound ? CHelper.JoinLines("dup", target.Load) : null,
+                                rvalCode,
+                                lines,
+                                CHelper.StoreTail(target)
+                            )
+                            : CHelper.JoinLines(compound ? lval.Getter : null, rvalCode, lines, "dup", lval.Setter),
                         Setter: null
                     );
                 }
 
                 if (assignmentOperator == null || assignmentOperator.Assign() != null)
                 {
-                    return Store(rval.Getter, converter);
+                    return Store(false, rval.Getter, converter);
                 }
                 else
                 {
@@ -153,10 +163,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             );
                         }
 
-                        return Store(
-                            CHelper.JoinLines(lval.Getter, rval.Getter),
-                            CHelper.JoinLines(converter, lines)
-                        );
+                        return Store(true, rval.Getter, CHelper.JoinLines(converter, lines));
                     }
 
                     if (false)
@@ -1077,15 +1084,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         );
                     }
 
-                    return CHelper.CombineGetterWithInstruction(
-                        lval: lval,
-                        lines: CHelper.JoinLines(
-                            "dup",
-                            lines,
-                            converter,
-                            lval.Type.Math?.ApplyAdd ?? throw new CompilerException(GetSourceRef(innerUnaryExpression), $"Addition not supported for type {lval.Type.Display}"),
-                            lval.Setter
-                        )
+                    var add = lval.Type.Math?.ApplyAdd ?? throw new CompilerException(GetSourceRef(innerUnaryExpression), $"Addition not supported for type {lval.Type.Display}");
+
+                    // ++a, --a: the value is the new one
+                    return new VarRef(
+                        Type: lval.Type,
+                        Getter: lval.Target is { } target
+                            ? CHelper.JoinLines(target.Address, "dup", target.Load, lines, converter, add, CHelper.StoreTail(target))
+                            : CHelper.JoinLines(lval.Getter, lines, converter, add, "dup", lval.Setter)
                     );
                 }
 
@@ -1205,15 +1211,32 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         );
                     }
 
-                    return CHelper.CombineGetterWithInstruction(
-                        lval: lval,
-                        lines: CHelper.JoinLines(
-                            lines,
-                            converter,
-                            lval.Type.Math?.ApplyAdd ?? throw new CompilerException(GetSourceRef(innerPostfixExpression), $"Addition not supported for type {lval.Type.Display}"),
-                            "dup",
-                            lval.Setter
-                        )
+                    var add = lval.Type.Math?.ApplyAdd ?? throw new CompilerException(GetSourceRef(innerPostfixExpression), $"Addition not supported for type {lval.Type.Display}");
+
+                    // a++, a--: the value is the old one
+                    if (lval.Target is { IsByte: false } target)
+                    {
+                        // address; old value; keep a copy of it in the slot; store the new one; read the copy back
+                        return new VarRef(
+                            Type: lval.Type,
+                            Getter: CHelper.JoinLines(
+                                target.Address,
+                                "dup",
+                                target.Load,
+                                "dup",
+                                $"pop.sp {CHelper.StoreValueSlotPlaceholder}",
+                                lines,
+                                converter,
+                                add,
+                                "memcpy 0",
+                                $"push.d.sp {CHelper.StoreValueSlotPlaceholder}"
+                            )
+                        );
+                    }
+
+                    return new VarRef(
+                        Type: lval.Type,
+                        Getter: CHelper.JoinLines(lval.Getter, "dup", lines, converter, add, lval.Setter)
                     );
                 }
 

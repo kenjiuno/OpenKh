@@ -36,13 +36,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             string path,
             Func<int, string, string> getter,
             Func<int, string, string>? setter,
-            Func<int, string, string> pointer)
+            Func<int, string, string> pointer,
+            Func<int, string, PointerTarget?>? target = null)
         {
             if (type.IsByteArray)
             {
                 // the bytes are packed in word slots; the slots are what can be read, written and labeled
                 var slots = Enumerable.Range(0, SlotsOf(type))
-                    .Select(i => Build(TypeDesc.Int32, off + 4 * i, $"{path}.{i}", getter, setter, pointer))
+                    .Select(i => Build(TypeDesc.Int32, off + 4 * i, $"{path}.{i}", getter, setter, pointer, target))
                     .ToArray();
                 return new VarRef(
                     Type: type,
@@ -57,7 +58,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var elementType = type.ElementType!;
                 var stride = 4 * SlotsOf(elementType);
                 var elements = Enumerable.Range(0, Math.Max(type.ArrayLength, 0))
-                    .Select(i => Build(elementType, off + stride * i, $"{path}.{i}", getter, setter, pointer))
+                    .Select(i => Build(elementType, off + stride * i, $"{path}.{i}", getter, setter, pointer, target))
                     .ToArray();
                 // the value of an array is the address of its first element
                 return new VarRef(
@@ -72,7 +73,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             {
                 var members = type.Members.ToDictionary(
                     m => m.Name,
-                    m => Build(m.Type, off + 4 * m.Slot, path + "." + m.Name, getter, setter, pointer)
+                    m => Build(m.Type, off + 4 * m.Slot, path + "." + m.Name, getter, setter, pointer, target)
                 );
                 return new VarRef(
                     Type: type,
@@ -85,7 +86,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 Type: type,
                 Getter: getter(off, path),
                 Setter: setter?.Invoke(off, path),
-                GetPointer: pointer(off, path)
+                GetPointer: pointer(off, path),
+                Target: target?.Invoke(off, path)
             );
         }
     }

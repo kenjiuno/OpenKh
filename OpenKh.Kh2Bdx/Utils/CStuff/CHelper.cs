@@ -74,6 +74,45 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         }
 
         /// <summary>
+        /// The end of a store to a variable reached through a pointer, with `address; value` on tp: store, and leave
+        /// the stored value on tp (it is the value of the assignment).
+        /// A statement that does not use the value drops these extras, see <see cref="WithoutStoreResult"/>.
+        /// </summary>
+        internal static string StoreTail(PointerTarget target) => target.IsByte
+            ? string.Join("\n", $"pop.sp {StoreValueSlotPlaceholder}", $"push.sp {StoreValueSlotPlaceholder}", "memcpy 1", $"push.d.sp {StoreValueSlotPlaceholder}")
+            : string.Join("\n", "dup", $"pop.sp {StoreValueSlotPlaceholder}", "memcpy 0", $"push.d.sp {StoreValueSlotPlaceholder}");
+
+        /// <summary>
+        /// The code of an expression statement that ends with <see cref="StoreTail"/>, without the copy of the stored
+        /// value (and so without the `drop` that would follow). Null if the code does not end so.
+        /// </summary>
+        internal static string? WithoutStoreResult(string code)
+        {
+            var lines = code.Split('\n').Select(it => it.TrimEnd()).ToList();
+            if (lines.Count < 2
+                || lines[^1] != $"push.d.sp {StoreValueSlotPlaceholder}"
+                || lines[^2] is not ("memcpy 0" or "memcpy 1"))
+            {
+                return null;
+            }
+
+            lines.RemoveAt(lines.Count - 1);
+            if (lines[^1] == "memcpy 0")
+            {
+                // the last `dup; pop.sp slot` is the one of this store (a nested store has its own, before it)
+                for (int x = lines.Count - 2; 1 <= x; x--)
+                {
+                    if (lines[x] == $"pop.sp {StoreValueSlotPlaceholder}" && lines[x - 1] == "dup")
+                    {
+                        lines.RemoveRange(x - 1, 2);
+                        break;
+                    }
+                }
+            }
+            return string.Join("\n", lines);
+        }
+
+        /// <summary>
         /// Store the low byte of the value on top of tp to *pointer.
         ///
         /// `memcpy 1` copies one byte from the source pointer it pops, so the value goes to a hidden slot first
@@ -309,24 +348,29 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         setter: (off, _) => PointerStore(lval.Getter, off),
                         pointer: (off, _) => (off == 0)
                             ? lval.Getter!
-                            : JoinLines(lval.Getter, $"push {off}", "add")
+                            : JoinLines(lval.Getter, $"push {off}", "add"),
+                        target: (off, _) => new PointerTarget(
+                            (off == 0) ? lval.Getter! : JoinLines(lval.Getter, $"push {off}", "add"),
+                            "push.d.pop 0"
+                        )
                     );
                 }
 
                 if (newType.IsByte)
                 {
                     // there is no byte load: read the word at the address and keep its lowest byte
+                    var load = JoinLines(
+                        "push.d.pop 0 ; deref char",
+                        "push 255",
+                        "and",
+                        newType == TypeDesc.Int8 ? "push 128\nxor\npush 128\nsub" : null
+                    );
                     return new VarRef(
                         Type: newType,
-                        Getter: JoinLines(
-                            lval.Getter,
-                            "push.d.pop 0 ; deref char",
-                            "push 255",
-                            "and",
-                            newType == TypeDesc.Int8 ? "push 128\nxor\npush 128\nsub" : null
-                        ),
+                        Getter: JoinLines(lval.Getter, load),
                         Setter: ByteStore(lval.Getter),
-                        GetPointer: lval.Getter
+                        GetPointer: lval.Getter,
+                        Target: new PointerTarget(lval.Getter!, load, IsByte: true)
                     );
                 }
 
@@ -343,7 +387,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     Setter: (size == 4)
                         ? PointerStore(lval.Getter, 0)
                         : null,
-                    GetPointer: lval.Getter
+                    GetPointer: lval.Getter,
+                    Target: (size == 4)
+                        ? new PointerTarget(lval.Getter!, "push.d.pop 0 ; deref")
+                        : null
                 );
             }
             else
@@ -364,7 +411,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         $"push.d.pop 0 ; deref"
                     ),
                     Setter: PointerStore(lval.Getter, 0), // pointee is a pointer: 4 bytes
-                    GetPointer: lval.Getter
+                    GetPointer: lval.Getter,
+                    Target: new PointerTarget(lval.Getter!, "push.d.pop 0 ; deref")
                 );
             }
         }

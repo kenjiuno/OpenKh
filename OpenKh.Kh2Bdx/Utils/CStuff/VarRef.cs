@@ -24,5 +24,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         string? Prelude = null,
         string? DiscardCode = null,
         IReadOnlyList<VarRef>? Elements = null,
-        IReadOnlyList<VarRef>? Slots = null);
+        IReadOnlyList<VarRef>? Slots = null,
+        PointerTarget? Target = null);
+
+    /// <summary>
+    /// A variable that is reached through a pointer. Real data stores to it with `memcpy`: the destination address is
+    /// pushed first, then the value.
+    /// </summary>
+    /// <param name="Address">code that pushes the address of the variable</param>
+    /// <param name="Load">code that replaces the address on tp with the value</param>
+    /// <param name="IsByte">one byte (char): stored with `memcpy 1` from a slot</param>
+    internal record PointerTarget(string Address, string Load, bool IsByte = false);
 }

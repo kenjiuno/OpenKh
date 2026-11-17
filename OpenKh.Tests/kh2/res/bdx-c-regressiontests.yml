@@ -209,19 +209,13 @@ patterns:
     incdec: ; func incdec
      pop.sp 0
      push.d.sp 0 ; a
-     push 1
-     add
-     dup
-     pop.sp 0 ; a
-     drop
-     push.d.sp 0 ; a
      dup
      push 1
      add
      pop.sp 0 ; a
      drop
      push.d.sp 0 ; a
-     push -1
+     push 1
      add
      dup
      pop.sp 0 ; a
@@ -230,6 +224,12 @@ patterns:
      dup
      push -1
      add
+     pop.sp 0 ; a
+     drop
+     push.d.sp 0 ; a
+     push -1
+     add
+     dup
      pop.sp 0 ; a
      drop
      ret

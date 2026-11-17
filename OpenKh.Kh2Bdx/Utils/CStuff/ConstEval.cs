@@ -126,8 +126,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
     {
         /// <summary>
         /// The array type, after checking that its elements can be laid out.
-        /// Elements are 4-byte slots (the memory is word based), so arrays of char or short are refused:
-        /// writing one element would clobber its neighbours.
+        /// Elements are 4-byte slots (the memory is word based), except char, whose bytes are packed.
+        /// Arrays of short are refused: they would need 16-bit loads and stores.
         /// </summary>
         /// <param name="length">-1 if the length is omitted (`int a[]`)</param>
         internal static TypeDesc Make(TypeDesc elementType, int length, SourceRef sourceRef)
@@ -145,7 +145,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             var wordSized = elementType.IsArray
                 || elementType.PointerDepth != 0
                 || (elementType.IsStruct && elementType.Members != null)
-                || elementType.Size == 4;
+                || elementType.Size == 4
+                || elementType.IsByte; // char a[N]: the bytes are packed in word slots
             if (!wordSized)
             {
                 throw new CompilerException(

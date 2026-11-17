@@ -244,7 +244,16 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         {
             writer.WriteLine($"{path}:");
 
-            if (type.IsArray)
+            if (type.IsByteArray)
+            {
+                // the bytes are packed: a label and a slot for each 4 of them
+                for (int x = 0; x < StructVar.SlotsOf(type); x++)
+                {
+                    writer.WriteLine($"{path}.{x}:");
+                    writer.WriteLine($" {reserve}");
+                }
+            }
+            else if (type.IsArray)
             {
                 for (int x = 0; x < type.ArrayLength; x++)
                 {
@@ -399,19 +408,24 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             codeSeg.WriteLine("ret");
 
             var body = codeSeg.ToString();
-            var alwaysAtLeast = 0;
-            if (body.Contains(CHelper.PointerSaveSlotPlaceholder))
+            // Hidden slot of char stores for the byte (alive for two instructions, so no jal covers it).
+            if (body.Contains(CHelper.ByteTempSlotPlaceholder))
             {
-                // Hidden local used by pointer stores to save sp[0]. A jal can be in the pointer expression while it
-                // is alive, so it is put above everything and every jal of this function covers it.
-                var saveSlot = frame.ReserveAboveHighWater();
-                body = body.Replace(CHelper.PointerSaveSlotPlaceholder, (4 * saveSlot).ToString());
-                alwaysAtLeast = saveSlot + 1;
+                var byteSlot = frame.ReserveAboveHighWater();
+                body = body.Replace(CHelper.ByteTempSlotPlaceholder, (4 * byteSlot).ToString());
+            }
+
+            // sp[0] is the pointer register of stores through a pointer: the locals move up by a slot.
+            var extraSlots = 0;
+            if (body.Contains(CHelper.PointerRegisterPlaceholder))
+            {
+                body = CHelper.ShiftSpOffsets(body).Replace(CHelper.PointerRegisterPlaceholder, "0");
+                extraSlots = 1;
             }
 
             // Each jal covers what is alive at that point: locals + live temporaries + 2 system DWORDs (count, ret-ip),
             // aligned to 16 bytes.
-            finalCodeSeg.WriteLine(frame.ResolveJalFrameSizes(body, alwaysAtLeast));
+            finalCodeSeg.WriteLine(frame.ResolveJalFrameSizes(body, 0, extraSlots));
         }
 
         private CHelper NewChildScope(

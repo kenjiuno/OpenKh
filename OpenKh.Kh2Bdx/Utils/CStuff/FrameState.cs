@@ -71,12 +71,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         }
 
         /// <param name="alwaysAtLeast">every jal covers at least this many DWORDs</param>
-        public string ResolveJalFrameSizes(string body, int alwaysAtLeast)
+        /// <param name="extraSlots">DWORDs added below the locals (the pointer register at sp[0])</param>
+        public string ResolveJalFrameSizes(string body, int alwaysAtLeast, int extraSlots = 0)
         {
             return Regex.Replace(
                 body,
                 @"@@FRAMESIZE:(\d+)@@",
-                m => CHelper.FrameSizeOf(Math.Max(_jalTops[int.Parse(m.Groups[1].Value)], alwaysAtLeast)).ToString()
+                m => CHelper.FrameSizeOf(Math.Max(_jalTops[int.Parse(m.Groups[1].Value)], alwaysAtLeast) + extraSlots).ToString()
             );
         }
     }

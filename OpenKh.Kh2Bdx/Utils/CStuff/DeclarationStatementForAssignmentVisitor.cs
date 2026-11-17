@@ -98,11 +98,23 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             {
                                 // `int a[] = { 1, 2, 3 };` the length is the number of the initializers
                                 var braced = (initDeclarator.initializer() is { } init) ? GetBracedInitList(init) : null;
-                                if (braced == null)
+                                var literalBytes = (initDeclarator.initializer() is { } init2 && init2.braceOrEqualInitializer()?.initializerClause() is { } clause2)
+                                    ? TryGetStringLiteral(clause2)
+                                    : null;
+                                int count;
+                                if (varPair.Type.IsByteArray && literalBytes != null)
+                                {
+                                    // char s[] = "abc";  the NUL is part of the array
+                                    count = literalBytes.Length + 1;
+                                }
+                                else if (braced != null)
+                                {
+                                    count = braced.initializerList()?.initializerClause().Length ?? 0;
+                                }
+                                else
                                 {
                                     throw new CompilerException(GetSourceRef(declarator), $"Array '{varPair.Name}' needs a length or a {{ ... }} initializer");
                                 }
-                                var count = braced.initializerList()?.initializerClause().Length ?? 0;
                                 varPair = varPair with
                                 {
                                     Type = ArrayTypes.Make(varPair.Type.ElementType!, count, GetSourceRef(declarator)),
@@ -148,6 +160,21 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                                 (varTypePair?.Static ?? false)
                                     ? writeHelper.InitCodeSeg
                                     : writeHelper.CodeSeg
+                            );
+                            continue;
+                        }
+
+                        if (assignTo != null
+                            && assignTo.Type.IsByteArray
+                            && initializer.braceOrEqualInitializer()?.initializerClause() is { } stringClause
+                            && TryGetStringLiteral(stringClause) is { } stringBytes)
+                        {
+                            // char s[8] = "abc";
+                            WriteStringInit(
+                                assignTo,
+                                stringBytes,
+                                GetSourceRef(stringClause),
+                                (varTypePair?.Static ?? false) ? writeHelper.InitCodeSeg : writeHelper.CodeSeg
                             );
                             continue;
                         }
@@ -222,6 +249,28 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             var clauses = list.initializerList()?.initializerClause()
                 ?? Array.Empty<CPP14Parser.InitializerClauseContext>();
 
+            if (target.Type.IsByteArray)
+            {
+                // char s[8] = { 'a', 'b', 0 };  constant bytes, the rest are zero
+                var bytes = new List<byte>();
+                var length = target.Type.ArrayLength;
+                if (length < clauses.Length)
+                {
+                    throw new CompilerException(GetSourceRef(clauses[length]), $"Too many initializers for {target.Type.Display}");
+                }
+                foreach (var clause in clauses)
+                {
+                    if (clause.bracedInitList() != null || VisitInitializerClause(clause)?.Getter is not { } code
+                        || !ConstEval.TryEvaluateCode(code, out var value))
+                    {
+                        throw new CompilerException(GetSourceRef(clause), "An element of a char array must be a constant");
+                    }
+                    bytes.Add((byte)value);
+                }
+                WriteBytes(target, bytes.ToArray(), writeTo);
+                return;
+            }
+
             if (target.Type.IsArray)
             {
                 // int a[3] = { 1, 2 };  elements in order, the rest are zero
@@ -293,6 +342,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return;
             }
 
+            if (target.Type.IsByteArray && TryGetStringLiteral(clause) is { } literal)
+            {
+                // { "ab", "cd" } for char names[2][8]
+                WriteStringInit(target, literal, GetSourceRef(clause), writeTo);
+                return;
+            }
+
             if (target.Type.IsArray)
             {
                 throw new CompilerException(GetSourceRef(clause), $"Cannot initialize {target.Type.Display} from an expression; use {{ ... }}");
@@ -321,8 +377,61 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             );
         }
 
+        /// <summary>The bytes of a string literal (adjacent literals are joined), or null if the clause is not one.</summary>
+        private byte[]? TryGetStringLiteral(CPP14Parser.InitializerClauseContext clause)
+        {
+            var text = clause.GetText();
+            var matches = System.Text.RegularExpressions.Regex.Matches(text, "\"(?:[^\"\\\\]|\\\\.)*\"");
+            if (matches.Count == 0 || matches.Sum(m => m.Length) != text.Length)
+            {
+                return null;
+            }
+            var sourceRef = GetSourceRef(clause);
+            return matches.SelectMany(m => ExpressionToVarRefVisitor.UnescapeStringLiteral(m.Value, sourceRef)).ToArray();
+        }
+
+        /// <summary>char s[N] = "text"; the NUL is included if it fits, and the rest is zero.</summary>
+        private void WriteStringInit(VarRef target, byte[] literal, SourceRef sourceRef, TextWriter writeTo)
+        {
+            if (target.Type.ArrayLength < literal.Length)
+            {
+                throw new CompilerException(sourceRef, $"String of {literal.Length} bytes does not fit in {target.Type.Display}");
+            }
+            WriteBytes(target, literal, writeTo);
+        }
+
+        /// <summary>Fill the packed bytes of a char array: the given bytes, then zero. A slot is written as a whole.</summary>
+        private void WriteBytes(VarRef target, byte[] bytes, TextWriter writeTo)
+        {
+            var slots = target.Slots ?? throw new InvalidOperationException($"Cannot initialize {target.Type.Display}: no slots");
+            for (int x = 0; x < slots.Count; x++)
+            {
+                var word = 0;
+                for (int b = 0; b < 4; b++)
+                {
+                    var at = 4 * x + b;
+                    if (at < bytes.Length)
+                    {
+                        word |= bytes[at] << (8 * b);
+                    }
+                }
+                writeTo.WriteLine(
+                    CHelper.JoinLines(
+                        $"push {word}",
+                        slots[x].Setter ?? throw new InvalidOperationException($"Cannot write {target.Type.Display}: no setter")
+                    )
+                );
+            }
+        }
+
         private void WriteZero(VarRef target, TextWriter writeTo)
         {
+            if (target.Type.IsByteArray)
+            {
+                WriteBytes(target, Array.Empty<byte>(), writeTo);
+                return;
+            }
+
             if (target.Type.IsArray)
             {
                 foreach (var element in target.Elements!)

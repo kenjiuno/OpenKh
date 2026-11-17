@@ -257,18 +257,135 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
-        public void PointerStoreBorrowsSp0AndRestoresIt()
+        public void PointerStoreUsesSp0AsPointerRegister()
         {
             var s = Compile("struct V { int x; int y; }; void f(struct V *p) { p->y = 3; }");
-            // value is dup'ed, sp[0] saved to a hidden slot, pointer put in sp[0], then restored
+            // value is dup'ed, the pointer goes to sp[0] (a slot of its own), p moves up to sp[4]
+            Assert.Contains("f: ; func f\n pop.sp 4\n", s);
             Assert.Contains(
-                " push 3\n dup\n push.d.sp 0 ; save sp[0]\n pop.sp 4\n push.d.sp 0 ; p\n pop.sp 0 ; pointer register\n pop.sp.d 4\n push.d.sp 4\n pop.sp 0 ; restore sp[0]\n drop\n",
+                " push 3\n dup\n push.d.sp 4 ; p\n pop.sp 0 ; pointer register\n pop.sp.d 4\n drop\n",
                 s
             );
-            // locals: p + hidden slot, so frame = 2 + 2 system DWORDs is used by jal; no placeholder may remain
             Assert.DoesNotContain("@@", s);
         }
 
+        [Fact]
+        public void PointerStoreIntoTheVariableAtSp0IsKept()
+        {
+            // the pointer register must not be a variable: a store into `a` would be undone when it is restored
+            var s = Compile("void f() { int a; int *p = &a; *p = 5; }");
+            Assert.Contains(" push.sp 4 ; &a\n", s);
+        }
+
+        [Fact]
+        public void CharStoreCopiesOneByteThroughThePointerRegister()
+        {
+            var s = Compile("void f(char *c) { *c = 1; }");
+            Assert.Contains(
+                " push.d.sp 4 ; c\n pop.sp 0 ; pointer register\n pop.sp 8 ; byte to store\n push.sp 8\n memcpy.sp.d 1, 0\n",
+                s
+            );
+        }
+
+        [Fact]
+        public void CharLoadKeepsTheLowestByteAndExtendsTheSign()
+        {
+            var s = Compile("int f(char *c) { return *c; }");
+            Assert.Contains(" push.d.pop 0 ; deref char\n push 255\n and\n push 128\n xor\n push 128\n sub\n", s);
+            var u = Compile("int f(unsigned char *c) { return *c; }");
+            Assert.Contains(" push.d.pop 0 ; deref char\n push 255\n and\n", u);
+            Assert.DoesNotContain("xor", u);
+        }
+
+        [Fact]
+        public void CharPointerMovesByOneByte()
+        {
+            var s = Compile("char *f(char *c) { return c + 3; }");
+            Assert.Contains(" push 3\n push 1\n mul\n add\n", s);
+            var p = Compile("int f(char *c) { return c[2]; }");
+            Assert.Contains(" push 2\n push 1\n mul\n add\n push.d.pop 0 ; deref char\n", p);
+        }
+
+        [Fact]
+        public void CharArrayPacksFourBytesInASlot()
+        {
+            // c: 2 slots (5 bytes), then n
+            var s = Compile("void f() { char c[5]; int n; n = 1; }");
+            Assert.Contains(" pop.sp 8 ; n\n", s);
+        }
+
+        [Fact]
+        public void StringInitializerFillsWholeSlotsLittleEndian()
+        {
+            var s = Compile("void f() { char s[8] = \"abcde\"; }");
+            // 'abcd' = 0x64636261, 'e' = 0x65, the rest is zero
+            Assert.Contains(" push 1684234849\n pop.sp 0 ; s.0\n push 101\n pop.sp 4 ; s.1\n", s);
+        }
+
+        [Fact]
+        public void CharArrayLengthComesFromTheStringWithItsNul()
+        {
+            // "xyz" + NUL = 4 bytes = 1 slot, so n is at 4
+            var s = Compile("void f() { char t[] = \"xyz\"; int n; n = 1; }");
+            Assert.Contains(" pop.sp 4 ; n\n", s);
+            var w = Compile("void f() { char t[] = \"xyzw\"; int n; n = 1; }");
+            Assert.Contains(" pop.sp 8 ; n\n", w);
+        }
+
+        [Fact]
+        public void BracedCharInitializerPacksConstants()
+        {
+            var s = Compile("void f() { char b[4] = { 'a', 'b', 0, 1 }; }");
+            // 0x01006261
+            Assert.Contains(" push 16802401\n pop.sp 0 ; b.0\n", s);
+        }
+
+        [Fact]
+        public void GlobalCharArrayHasALabelPerSlot()
+        {
+            var s = Compile("char g[6]; void f() { }");
+            Assert.Contains("section .bss\ng:\ng.0:\n resb 4\ng.1:\n resb 4", s);
+        }
+
+        [Fact]
+        public void GlobalStringInitializerGoesToInitc()
+        {
+            var s = Compile("char g[4] = \"hi\"; void f() { }");
+            Assert.Contains("_initc:\n push 26984\n pop.wp g.0\n ret\n", s);
+        }
+
+        [Fact]
+        public void StringsInCharArraysOfAnArray()
+        {
+            // char names[2][4]: a row is a slot
+            var s = Compile("void f() { char n[2][4] = { \"ab\", \"cd\" }; }");
+            Assert.Contains(" push 25185\n pop.sp 0 ; n.0.0\n push 25699\n pop.sp 4 ; n.1.0\n", s);
+        }
+
+        [Fact]
+        public void CastToPointerKeepsThePointer()
+        {
+            var s = Compile("char *f(int a) { return (char *)(a + 1); }");
+            Assert.DoesNotContain("push 255", s);
+        }
+
+        [Fact]
+        public void CharIsPromotedToIntInArithmetic()
+        {
+            // 1000 must not be narrowed to a char (1000 & 255 = 232)
+            var s = Compile("int f(char *c) { return *c * 1000; }");
+            Assert.DoesNotContain("push 255\n and\n push.d", s);
+            Assert.Contains(" push 1000\n mul\n", s);
+            Assert.DoesNotContain(" push 1000\n push 255", s);
+        }
+
+        [Fact]
+        public void CharArrayMemberIsCopiedWithTheStruct()
+        {
+            var s = Compile("struct N { int id; char name[6]; }; void f() { struct N a; struct N b; b = a; }");
+            // id and the 2 slots of name
+            Assert.Contains(" push.d.sp 8 ; a.name.1\n pop.sp 20 ; b.name.1\n", s);
+        }
         [Fact]
         public void PointerStoreThroughIntPointer()
         {
@@ -306,7 +423,6 @@ namespace OpenKh.Tests.kh2
         }
 
         [Theory]
-        [InlineData("void f(char *c) { *c = 1; }")]
         [InlineData("void f(short *c) { *c = 1; }")]
         public void PointerStoreOfSubWordIsRejected(string code)
         {
@@ -705,9 +821,8 @@ namespace OpenKh.Tests.kh2
         }
 
         [Theory]
-        [InlineData("void f() { char c[4]; }")]
         [InlineData("void f() { short s[2]; }")]
-        [InlineData("struct S { char c[3]; }; void f() { }")]
+        [InlineData("struct S { short c[3]; }; void f() { }")]
         [InlineData("void f() { int a[0]; }")]
         [InlineData("void f() { int a[-1]; }")]
         [InlineData("void f(int n) { int a[n]; }")]
@@ -721,7 +836,13 @@ namespace OpenKh.Tests.kh2
         [InlineData("void f() { int a[2] = 1; }")]
         [InlineData("void f() { int a[2]; float x; a[x] = 1; }")]
         [InlineData("void f() { int a; a[0] = 1; }")]
-        [InlineData("void f() { char *s; s[1] = 1; }")]
+        [InlineData("void f() { short *s; s[1] = 1; }")]
+        [InlineData("void f() { char s[2] = \"abc\"; }")]
+        [InlineData("void f() { char s[2] = { 1, 2, 3 }; }")]
+        [InlineData("void f(int n) { char s[2] = { n }; }")]
+        [InlineData("void f() { char s[2]; char t[2]; s = t; }")]
+        [InlineData("void f() { char s[2]; s[2] = 1; }")]
+        [InlineData("void f() { char s[]; }")]
         public void BadArrays(string code)
         {
             Assert.ThrowsAny<Exception>(() => Compile(code));

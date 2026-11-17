@@ -27,6 +27,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
     {
         public bool IsArray => ElementType != null;
 
+        /// <summary>char / unsigned char as a value (not a pointer, not an array)</summary>
+        public bool IsByte => PointerDepth == 0 && !IsStruct && ElementType == null && Size == 1;
+
+        /// <summary>An array of char: its bytes are packed, 4 in a slot.</summary>
+        public bool IsByteArray => ElementType is { IsByte: true };
+
         public string Display => IsArray
             ? $"{ElementType!.Display}[{(0 <= ArrayLength ? ArrayLength.ToString() : "")}]"
             : $"{BaseName}{new string('*', PointerDepth)}";
@@ -92,7 +98,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 Size = 4,
                 Comparators = LLComparators.IntVer,
                 // `p + 1` moves by what p points to: this one element in bytes (every scalar is a 4-byte slot)
-                Math = LLMath.PointerVerOf(4 * StructVar.SlotsOf(this)),
+                Math = LLMath.PointerVerOf(StructVar.StrideOf(this)),
                 PointerDepth = PointerDepth + 1,
                 IsStruct = false,
                 Members = null,

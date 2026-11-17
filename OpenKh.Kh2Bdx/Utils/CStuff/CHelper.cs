@@ -46,29 +46,61 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             Frame?.Allocate(numItems, temp: true, align16: true) ?? AllocateStackItems(numItems);
 
         /// <summary>
-        /// Placeholder replaced by the byte offset of a hidden per-function sp slot, which keeps
-        /// the original sp[0] while a pointer store borrows it. Allocated only if used.
+        /// Placeholder of sp[0] as the pointer register of stores through a pointer. The only such instructions
+        /// (`pop.sp.d`, `memcpy.sp.d`) take the pointer from sp[0], so a function that has one gets sp[0] as a
+        /// hidden slot: every other local moves up by a slot (see <see cref="ShiftSpOffsets"/>).
+        /// Otherwise a store into the variable at sp[0] would be lost.
         /// </summary>
-        public const string PointerSaveSlotPlaceholder = "@@PTRSAVE@@";
+        public const string PointerRegisterPlaceholder = "@@PTRREG@@";
 
         /// <summary>
         /// Store the value on top of tp to *(pointer + offset).
-        ///
-        /// The only store-through-pointer instruction is `pop.sp.d`, which takes the pointer from sp[0]
-        /// (*(*sp + imm16)). sp[0] normally holds a user variable, so it is saved and restored around the store.
-        /// The pointer expression is evaluated before sp[0] is overwritten.
+        /// The pointer expression is evaluated first, then put in the pointer register.
         /// </summary>
         internal string PointerStore(string? pointerGetter, int offset)
         {
             return JoinLines(
-                "push.d.sp 0 ; save sp[0]",
-                $"pop.sp {PointerSaveSlotPlaceholder}",
                 pointerGetter,
-                "pop.sp 0 ; pointer register",
-                $"pop.sp.d {offset}",
-                $"push.d.sp {PointerSaveSlotPlaceholder}",
-                "pop.sp 0 ; restore sp[0]"
+                $"pop.sp {PointerRegisterPlaceholder} ; pointer register",
+                $"pop.sp.d {offset}"
             )!;
+        }
+
+        /// <summary>
+        /// Placeholder replaced by the byte offset of a hidden slot, which holds the byte being stored.
+        /// Allocated only if used. It is alive for two instructions, so no jal can see it.
+        /// </summary>
+        public const string ByteTempSlotPlaceholder = "@@BYTETMP@@";
+
+        /// <summary>
+        /// Store the low byte of the value on top of tp to *pointer.
+        ///
+        /// There is no byte store, so the value is put in a hidden slot and its first byte is copied with a
+        /// 1-byte `memcpy.sp.d`, which takes the destination pointer from the pointer register like `pop.sp.d`.
+        /// </summary>
+        internal string ByteStore(string? pointerGetter)
+        {
+            return JoinLines(
+                pointerGetter,
+                $"pop.sp {PointerRegisterPlaceholder} ; pointer register",
+                $"pop.sp {ByteTempSlotPlaceholder} ; byte to store",
+                $"push.sp {ByteTempSlotPlaceholder}",
+                "memcpy.sp.d 1, 0"
+            )!;
+        }
+
+        /// <summary>Move every sp offset in the code up by a slot, to make room for the pointer register at sp[0].</summary>
+        internal static string ShiftSpOffsets(string body)
+        {
+            // push.sp / push.d.sp / pop.sp N   and   memcpy.sp size, N   (the *.d forms are relative to a pointer)
+            return System.Text.RegularExpressions.Regex.Replace(
+                body,
+                @"^(\s*(?:push\.sp|push\.d\.sp|pop\.sp) )(\d+)|^(\s*memcpy\.sp \d+, )(\d+)",
+                m => m.Groups[1].Success
+                    ? m.Groups[1].Value + (int.Parse(m.Groups[2].Value) + 4)
+                    : m.Groups[3].Value + (int.Parse(m.Groups[4].Value) + 4),
+                System.Text.RegularExpressions.RegexOptions.Multiline
+            );
         }
 
         private readonly IEnumerable<(TypeDesc FromType, TypeDesc ToType, string? Converter)> _knownConverters = GetKnownConverters()
@@ -208,7 +240,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 throw new CompilerException(sourceRef, $"Subscripted value is neither an array nor a pointer: {type.Display}");
             }
 
-            if (!type.IsArray && type.PointerDepth == 1 && type.BaseType is { IsStruct: false, Size: > 0 and < 4 })
+            if (!type.IsArray && type.PointerDepth == 1 && type.BaseType is { IsStruct: false, Size: 2 })
             {
                 throw new CompilerException(sourceRef, $"Indexing {type.Display} is not supported: memory is word based");
             }
@@ -218,13 +250,16 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 throw new CompilerException(sourceRef, "Array index must be an integer");
             }
 
+            if (type.IsArray && 0 <= type.ArrayLength && ConstEval.TryEvaluateCode(index.Getter, out var checkedIndex)
+                && (checkedIndex < 0 || type.ArrayLength <= checkedIndex))
+            {
+                throw new CompilerException(sourceRef, $"Index {checkedIndex} is out of the bounds of {type.Display}");
+            }
+
             // a variable at a known place with a constant index is just that element
+            // (the elements of a char array are bytes in a word: they are reached through their address)
             if (array.Elements != null && ConstEval.TryEvaluateCode(index.Getter, out var constantIndex))
             {
-                if (constantIndex < 0 || array.Elements.Count <= constantIndex)
-                {
-                    throw new CompilerException(sourceRef, $"Index {constantIndex} is out of the bounds of {type.Display}");
-                }
                 return array.Elements[constantIndex];
             }
 
@@ -233,8 +268,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             // the size of one element in bytes
             var stride = type.IsArray
-                ? 4 * StructVar.SlotsOf(type.ElementType!)
-                : (type.PointerDepth == 1 ? 4 * StructVar.SlotsOf(type.BaseType!) : 4);
+                ? StructVar.StrideOf(type.ElementType!)
+                : (type.PointerDepth == 1 ? StructVar.StrideOf(type.BaseType!) : 4);
 
             var address = JoinLines(
                 array.Getter ?? throw new CompilerException(sourceRef, "Array has no address"),
@@ -290,6 +325,23 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     );
                 }
 
+                if (newType.IsByte)
+                {
+                    // there is no byte load: read the word at the address and keep its lowest byte
+                    return new VarRef(
+                        Type: newType,
+                        Getter: JoinLines(
+                            lval.Getter,
+                            "push.d.pop 0 ; deref char",
+                            "push 255",
+                            "and",
+                            newType == TypeDesc.Int8 ? "push 128\nxor\npush 128\nsub" : null
+                        ),
+                        Setter: ByteStore(lval.Getter),
+                        GetPointer: lval.Getter
+                    );
+                }
+
                 return new VarRef(
                     Type: newType,
                     Getter: (size <= 4)
@@ -299,7 +351,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         )
                         : null,
                     // pop.sp.d stores a whole word, so only 4-byte pointees are writable
-                    // (a store to char/short would clobber the neighbouring bytes).
+                    // (a store to short would clobber the neighbouring bytes).
                     Setter: (size == 4)
                         ? PointerStore(lval.Getter, 0)
                         : null,
@@ -313,7 +365,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     PointerDepth = lval.Type.PointerDepth - 1,
                     // `p + 1` moves by what the new type points to
                     Math = LLMath.PointerVerOf(
-                        (lval.Type.PointerDepth - 1 == 1) ? 4 * StructVar.SlotsOf(lval.Type.BaseType!) : 4
+                        (lval.Type.PointerDepth - 1 == 1) ? StructVar.StrideOf(lval.Type.BaseType!) : 4
                     ),
                 };
 
@@ -356,6 +408,16 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             void Copy(VarRef to, VarRef from)
             {
+                if (to.Type.IsByteArray)
+                {
+                    // the packed bytes are copied as whole slots
+                    for (int x = 0; x < to.Slots!.Count; x++)
+                    {
+                        Copy(to.Slots[x], from.Slots![x]);
+                    }
+                    return;
+                }
+
                 if (to.Type.IsArray)
                 {
                     // an array member of the struct is copied element by element
@@ -387,7 +449,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// <summary>The scalar members of a struct value in slot order (nested structs are flattened).</summary>
         internal IEnumerable<VarRef> StructLeaves(VarRef value)
         {
-            if (value.Type.IsArray)
+            if (value.Type.IsByteArray)
+            {
+                foreach (var slot in value.Slots!)
+                {
+                    yield return slot;
+                }
+            }
+            else if (value.Type.IsArray)
             {
                 foreach (var element in value.Elements!)
                 {

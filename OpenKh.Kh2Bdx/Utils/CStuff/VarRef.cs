@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 namespace OpenKh.Kh2Bdx.Utils.CStuff
 {
     /// <param name="Elements">the elements of an array variable that is laid out at known places (locals, globals, members)</param>
+    /// <param name="Slots">the word slots of a char array, whose bytes are packed 4 per slot (it has no Elements)</param>
     /// <param name="Prelude">
     /// Code that must run once before the members of a struct value can be read. Used by the result of a call that
     /// returns a struct: the call and the copy of the returned struct into a hidden local.
@@ -22,5 +23,6 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         IReadOnlyDictionary<string, VarRef>? Members = null,
         string? Prelude = null,
         string? DiscardCode = null,
-        IReadOnlyList<VarRef>? Elements = null);
+        IReadOnlyList<VarRef>? Elements = null,
+        IReadOnlyList<VarRef>? Slots = null);
 }

@@ -13,9 +13,17 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
     internal static class StructVar
     {
         /// <summary>Number of 4-byte slots that a variable of the type occupies.</summary>
-        internal static int SlotsOf(TypeDesc type) => type.IsArray
-            ? Math.Max(type.ArrayLength, 0) * SlotsOf(type.ElementType!)
-            : (type.Size == 0) ? 1 : (type.Size + 3) / 4;
+        internal static int SlotsOf(TypeDesc type) => type.IsByteArray
+            ? (Math.Max(type.ArrayLength, 0) + 3) / 4 // char a[N] packs 4 bytes in a slot
+            : type.IsArray
+                ? Math.Max(type.ArrayLength, 0) * SlotsOf(type.ElementType!)
+                : (type.Size == 0) ? 1 : (type.Size + 3) / 4;
+
+        /// <summary>
+        /// What `p + 1` adds to a pointer to the type, and the distance between the elements of an array of it, in bytes.
+        /// A char is one byte; everything else takes whole slots.
+        /// </summary>
+        internal static int StrideOf(TypeDesc type) => type.IsByte ? 1 : 4 * SlotsOf(type);
 
         /// <summary>
         /// Create VarRef of the variable. Struct variable is expanded to its members, and array variable to its elements, recursively.
@@ -30,6 +38,20 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             Func<int, string, string>? setter,
             Func<int, string, string> pointer)
         {
+            if (type.IsByteArray)
+            {
+                // the bytes are packed in word slots; the slots are what can be read, written and labeled
+                var slots = Enumerable.Range(0, SlotsOf(type))
+                    .Select(i => Build(TypeDesc.Int32, off + 4 * i, $"{path}.{i}", getter, setter, pointer))
+                    .ToArray();
+                return new VarRef(
+                    Type: type,
+                    Getter: pointer(off, path),
+                    GetPointer: pointer(off, path),
+                    Slots: slots
+                );
+            }
+
             if (type.IsArray)
             {
                 var elementType = type.ElementType!;

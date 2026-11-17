@@ -261,7 +261,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     case >= 2:
                         // 1 ^ 2
                         var lvalTree = exclusiveOrExpressions[0];
-                        var lval = VisitExclusiveOrExpression(lvalTree);
+                        var lval = Promote(VisitExclusiveOrExpression(lvalTree));
                         if (lval.Getter == null)
                         {
                             throw new CompilerException(GetSourceRef(lvalTree), "Left value must have a getter");
@@ -270,7 +270,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         for (int x = 0; x < exclusiveOrExpressions.Length - 1; x++)
                         {
                             var rvalTree = exclusiveOrExpressions[1 + x];
-                            var rval = VisitExclusiveOrExpression(rvalTree);
+                            var rval = Promote(VisitExclusiveOrExpression(rvalTree));
                             if (rval.Getter == null)
                             {
                                 throw new CompilerException(GetSourceRef(rvalTree), "Right value must have a getter");
@@ -338,7 +338,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     case >= 2:
                         // 1 | 2
                         var lvalTree = andExpressions[0];
-                        var lval = VisitAndExpression(lvalTree);
+                        var lval = Promote(VisitAndExpression(lvalTree));
                         if (lval.Getter == null)
                         {
                             throw new CompilerException(GetSourceRef(lvalTree), "Left value must have a getter");
@@ -347,7 +347,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         for (int x = 0; x < andExpressions.Length - 1; x++)
                         {
                             var rvalTree = andExpressions[1 + x];
-                            var rval = VisitAndExpression(rvalTree);
+                            var rval = Promote(VisitAndExpression(rvalTree));
                             if (rval.Getter == null)
                             {
                                 throw new CompilerException(GetSourceRef(rvalTree), "Right value must have a getter");
@@ -415,7 +415,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     case >= 2:
                         // 1 & 2
                         var lvalTree = equalityExpressions[0];
-                        var lval = VisitEqualityExpression(lvalTree);
+                        var lval = Promote(VisitEqualityExpression(lvalTree));
                         if (lval.Getter == null)
                         {
                             throw new CompilerException(GetSourceRef(lvalTree), "Left value must have a getter");
@@ -424,7 +424,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         for (int x = 0; x < equalityExpressions.Length - 1; x++)
                         {
                             var rvalTree = equalityExpressions[1 + x];
-                            var rval = VisitEqualityExpression(rvalTree);
+                            var rval = Promote(VisitEqualityExpression(rvalTree));
                             if (rval.Getter == null)
                             {
                                 throw new CompilerException(GetSourceRef(rvalTree), "Right value must have a getter");
@@ -490,8 +490,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     case 1:
                         return VisitRelationalExpression(relationalExpressions[0]);
                     case 2:
-                        var lval = VisitRelationalExpression(relationalExpressions[0]);
-                        var rval = VisitRelationalExpression(relationalExpressions[1]);
+                        var lval = Promote(VisitRelationalExpression(relationalExpressions[0]));
+                        var rval = Promote(VisitRelationalExpression(relationalExpressions[1]));
 
                         if (lval.Getter == null)
                         {
@@ -542,6 +542,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             throw new CompilerException(GetSourceRef(equalityExpression), "Unsupported equality expression");
         }
 
+        /// <summary>Integer promotion: char and short take part in arithmetic as int, so the other operand is not narrowed to them.</summary>
+        private static VarRef Promote(VarRef value) =>
+            value.Type is { PointerDepth: 0, IsStruct: false, ElementType: null, Size: 1 or 2 } && value.Type.Math == LLMath.IntVer
+                ? value with { Type = TypeDesc.Int32 }
+                : value;
+
         private VarRef VisitRelationalExpression(RelationalExpressionContext relationalExpression)
         {
             if (relationalExpression.shiftExpression() is var shiftExpressions)
@@ -551,8 +557,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     case 1:
                         return VisitShiftExpression(shiftExpressions[0]);
                     case 2:
-                        var lval = VisitShiftExpression(shiftExpressions[0]);
-                        var rval = VisitShiftExpression(shiftExpressions[1]);
+                        var lval = Promote(VisitShiftExpression(shiftExpressions[0]));
+                        var rval = Promote(VisitShiftExpression(shiftExpressions[1]));
 
                         if (lval.Getter == null)
                         {
@@ -624,7 +630,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         // 1 << 2
                         // 1 << 2 >> 3
                         var lvalTree = additiveExpressions[0];
-                        var lval = VisitAdditiveExpression(lvalTree);
+                        var lval = Promote(VisitAdditiveExpression(lvalTree));
                         if (lval.Getter == null)
                         {
                             throw new CompilerException(GetSourceRef(lvalTree), "Left value must have a getter");
@@ -633,7 +639,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         for (int x = 0; x < additiveExpressions.Length - 1; x++)
                         {
                             var rvalTree = additiveExpressions[1 + x];
-                            var rval = VisitAdditiveExpression(rvalTree);
+                            var rval = Promote(VisitAdditiveExpression(rvalTree));
                             if (rval.Getter == null)
                             {
                                 throw new CompilerException(GetSourceRef(rvalTree), "Right value must have a getter");
@@ -706,7 +712,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         // 1 + 2
                         // 1 + 2 - 3
                         var lvalTree = multiplicativeExpressions[0];
-                        var lval = VisitMultiplicativeExpression(lvalTree);
+                        var lval = Promote(VisitMultiplicativeExpression(lvalTree));
                         if (lval.Getter == null)
                         {
                             throw new CompilerException(GetSourceRef(lvalTree), "Left value must have a getter");
@@ -715,7 +721,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         for (int x = 0; x < multiplicativeExpressions.Length - 1; x++)
                         {
                             var rvalTree = multiplicativeExpressions[1 + x];
-                            var rval = VisitMultiplicativeExpression(rvalTree);
+                            var rval = Promote(VisitMultiplicativeExpression(rvalTree));
                             if (rval.Getter == null)
                             {
                                 throw new CompilerException(GetSourceRef(rvalTree), "Right value must have a getter");
@@ -800,7 +806,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         // 1 * 2
                         // 1 * 2 / 3
                         var lvalTree = pointerMemberExpressions[0];
-                        var lval = VisitPointerMemberExpression(lvalTree);
+                        var lval = Promote(VisitPointerMemberExpression(lvalTree));
                         if (lval.Getter == null)
                         {
                             throw new CompilerException(GetSourceRef(lvalTree), "Left value must have a getter");
@@ -809,7 +815,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         for (int x = 0; x < pointerMemberExpressions.Length - 1; x++)
                         {
                             var rvalTree = pointerMemberExpressions[1 + x];
-                            var rval = VisitPointerMemberExpression(rvalTree);
+                            var rval = Promote(VisitPointerMemberExpression(rvalTree));
                             if (rval.Getter == null)
                             {
                                 throw new CompilerException(GetSourceRef(rvalTree), "Right value must have a getter");
@@ -922,10 +928,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var converter = CHelper.GetConverter(FromType: rval.Type, ToType: targetType)
                     ?? throw new CompilerException(GetSourceRef(theTypeId), $"Cannot convert from {rval.Type.Display} to {targetType.Display}");
 
+                // the value now has the target type (`(char *)p`, `(float)i`)
                 return CHelper.CombineGetterWithInstruction(
                     lval: rval,
                     lines: converter
-                );
+                ) with { Type = targetType };
             }
 
             throw new CompilerException(GetSourceRef(castExpression), "Unsupported cast expression");
@@ -936,7 +943,25 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             if (theTypeId.typeSpecifierSeq() is var typeSpecifierSeq
                 && typeSpecifierSeq != null)
             {
-                return VisitTypeSpecifierSeq(typeSpecifierSeq);
+                var type = VisitTypeSpecifierSeq(typeSpecifierSeq);
+
+                // `(char *)p`: the stars of the abstract declarator
+                if (theTypeId.abstractDeclarator() is { } abstractDeclarator)
+                {
+                    var pointerAbstract = abstractDeclarator.pointerAbstractDeclarator()
+                        ?? throw new CompilerException(GetSourceRef(abstractDeclarator), "Unsupported type in cast");
+                    if (pointerAbstract.noPointerAbstractDeclarator() != null
+                        || pointerAbstract.pointerOperator().Any(it => it.Star() == null))
+                    {
+                        throw new CompilerException(GetSourceRef(abstractDeclarator), "Unsupported type in cast");
+                    }
+                    foreach (var _ in pointerAbstract.pointerOperator())
+                    {
+                        type = type.MakePointerType();
+                    }
+                }
+
+                return type;
             }
 
             throw new CompilerException(GetSourceRef(theTypeId), "Unsupported the type id");
@@ -1330,7 +1355,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// <summary>
         /// Decode "text" or 'c' (quotes included) into bytes. Supports \n \t \r \0 \a \b \f \v \\ \' \" \? \xHH and octal.
         /// </summary>
-        private static byte[] UnescapeStringLiteral(string text, SourceRef sourceRef)
+        internal static byte[] UnescapeStringLiteral(string text, SourceRef sourceRef)
         {
             var body = text.Substring(1, text.Length - 2);
             var result = new List<byte>();

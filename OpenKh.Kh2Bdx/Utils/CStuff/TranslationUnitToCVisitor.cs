@@ -400,7 +400,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         ExpectedOuts: (retType != TypeDesc.Void) ? 1 : 0,
                         RetType: retType,
                         NextUniqueLabelGenerator: nextLabels,
-                        CHelper: childScope
+                        CHelper: childScope,
+                        UserLabels: CollectUserLabels(functionBody, funcName)
                     )
                 );
             }
@@ -420,6 +421,35 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             // Each jal covers what is alive at that point: locals + live temporaries + 2 system DWORDs (count, ret-ip),
             // aligned to 16 bytes.
             finalCodeSeg.WriteLine(frame.ResolveJalFrameSizes(body, 0));
+        }
+
+        /// <summary>
+        /// The labels `name:` in a function body, by name. They belong to the whole function (a goto can jump into
+        /// and out of blocks), so they are collected before the body is compiled to allow a jump forward.
+        /// </summary>
+        private Dictionary<string, string> CollectUserLabels(CPP14Parser.FunctionBodyContext functionBody, string funcName)
+        {
+            var labels = new Dictionary<string, string>();
+
+            void Walk(Antlr4.Runtime.Tree.IParseTree tree)
+            {
+                if (tree is CPP14Parser.LabeledStatementContext { } labeled && labeled.Identifier() is { } identifier)
+                {
+                    var name = identifier.GetText();
+                    if (!labels.TryAdd(name, $"__{funcName}_L_{name}"))
+                    {
+                        throw new CompilerException(GetSourceRef(labeled), $"The label '{name}' is defined twice");
+                    }
+                }
+
+                for (int x = 0; x < tree.ChildCount; x++)
+                {
+                    Walk(tree.GetChild(x));
+                }
+            }
+
+            Walk(functionBody);
+            return labels;
         }
 
         private CHelper NewChildScope(
@@ -586,14 +616,22 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             if (statement.labeledStatement() is { } labeledStatement)
             {
-                // `case X:` / `default:` of the enclosing switch; goto labels are not supported
+                if (labeledStatement.Identifier() is { } labelName)
+                {
+                    // `name:` the target of goto
+                    codeSeg.WriteLine($"{writeHelper.UserLabels![labelName.GetText()]}:");
+                    WriteStatement(labeledStatement.statement(), writeHelper);
+                    return;
+                }
+
+                // `case X:` / `default:` of the enclosing switch
                 if (writeHelper.CaseLabels == null || !writeHelper.CaseLabels.TryGetValue(labeledStatement, out var caseLabel))
                 {
                     throw new CompilerException(
                         GetSourceRef(labeledStatement),
                         (labeledStatement.Case() != null || labeledStatement.Default() != null)
                             ? "case/default label outside of a switch"
-                            : "Labels (goto) are not supported"
+                            : "Unsupported label"
                     );
                 }
                 codeSeg.WriteLine($"{caseLabel}:");
@@ -1037,6 +1075,17 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var target = isBreak
                     ? loop.Break
                     : loop.Continue ?? throw new CompilerException(GetSourceRef(jumpStatement), "continue outside of a loop");
+                codeSeg.WriteLine($"b {target}");
+                return;
+            }
+
+            else if (jumpStatement.Goto() != null)
+            {
+                var name = jumpStatement.Identifier().GetText();
+                if (writeHelper.UserLabels == null || !writeHelper.UserLabels.TryGetValue(name, out var target))
+                {
+                    throw new CompilerException(GetSourceRef(jumpStatement), $"goto to the undefined label '{name}'");
+                }
                 codeSeg.WriteLine($"b {target}");
                 return;
             }

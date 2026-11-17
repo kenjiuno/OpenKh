@@ -14,7 +14,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         CHelper CHelper,
         LoopLabels? Loop = null,
         TypeDesc? RetType = null,
-        IReadOnlyDictionary<CPP14Parser.LabeledStatementContext, string>? CaseLabels = null
+        IReadOnlyDictionary<CPP14Parser.LabeledStatementContext, string>? CaseLabels = null,
+        IReadOnlyDictionary<string, string>? UserLabels = null
         );
 
     /// <param name="Break">where `break` jumps to (end of the loop or switch)</param>

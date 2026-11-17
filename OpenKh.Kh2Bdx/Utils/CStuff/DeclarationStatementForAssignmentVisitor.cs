@@ -61,6 +61,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return;
             }
 
+            if (simpleDeclaration.GetText() == ";")
+            {
+                // the empty statement
+                return;
+            }
+
             throw new CompilerException(GetSourceRef(simpleDeclaration), "Unsupported simple declaration");
         }
 

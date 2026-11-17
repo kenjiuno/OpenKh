@@ -269,6 +269,29 @@ namespace OpenKh.Tests.kh2
             Assert.DoesNotContain("pop.sp.d", s);
         }
 
+        [Fact]
+        public void GotoJumpsToAFunctionLabel()
+        {
+            var s = Compile("int f(int a) { if (a) { goto out; } a = 1; out: return a; }");
+            Assert.Contains(" b __f_L_out\n", s);
+            Assert.Contains("__f_L_out:\n", s);
+        }
+
+        [Fact]
+        public void SameLabelNameInTwoFunctionsIsFine()
+        {
+            Compile("void f() { goto x; x: ; } void g() { goto x; x: ; }");
+        }
+
+        [Theory]
+        [InlineData("void f() { goto nowhere; }")]
+        [InlineData("void f() { x: ; x: ; }")]
+        [InlineData("void f() { { x: ; } } void g() { goto x; }")]
+        public void BadGoto(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
         [Theory]
         [InlineData("int", 4)]
         [InlineData("char", 1)]
@@ -686,7 +709,6 @@ namespace OpenKh.Tests.kh2
         [InlineData("void f(int n) { switch (n) { default: break; default: break; } }")]
         [InlineData("void f(float n) { switch (n) { case 1: break; } }")]
         [InlineData("void f(int n) { switch (n) { case 1.5: break; } }")]
-        [InlineData("void f() { L: ; }")]
         public void BadSwitchUse(string code)
         {
             Assert.ThrowsAny<Exception>(() => Compile(code));

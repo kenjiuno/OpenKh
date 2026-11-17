@@ -375,15 +375,23 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     codeSeg.WriteLine($"pop.sp {4 * x}");
                 }
 
+                int labelIndex = 0;
+                Func<Func<string, string>> nextLabels = () =>
+                {
+                    labelIndex += 1;
+                    var index = labelIndex;
+                    return purpose => $"__{funcName}{index}{purpose}";
+                };
+
                 cHelper = cHelper with
                 {
                     AllocateStackItems = numItems => frame.Allocate(numItems),
                     Frame = frame,
+                    NextUniqueLabelGenerator = nextLabels,
                 };
 
                 var childScope = NewChildScope(cHelper, argDict);
 
-                int labelIndex = 0;
                 WriteStatementsFunctionBody(
                     functionBody,
                     new WriteHelper(
@@ -391,15 +399,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         InitCodeSeg: initCodeSeg,
                         ExpectedOuts: (retType != TypeDesc.Void) ? 1 : 0,
                         RetType: retType,
-                        NextUniqueLabelGenerator: () =>
-                        {
-                            labelIndex += 1;
-                            return purpose =>
-                            {
-                                var label = $"__{funcName}{labelIndex}{purpose}";
-                                return label;
-                            };
-                        },
+                        NextUniqueLabelGenerator: nextLabels,
                         CHelper: childScope
                     )
                 );
@@ -472,7 +472,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 AllocateStackItems: parent.AllocateStackItems,
                 GetFunc: parent.GetFunc,
                 AddStringLiteral: parent.AddStringLiteral,
-                Frame: parent.Frame
+                Frame: parent.Frame,
+                NextUniqueLabelGenerator: parent.NextUniqueLabelGenerator
             );
         }
 

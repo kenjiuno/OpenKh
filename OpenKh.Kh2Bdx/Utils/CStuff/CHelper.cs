@@ -15,7 +15,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         Func<int, int> AllocateStackItems,
         Func<string, FuncSig?>? GetFunc = null,
         Func<byte[], string>? AddStringLiteral = null,
-        FrameState? Frame = null
+        FrameState? Frame = null,
+        Func<Func<string, string>>? NextUniqueLabelGenerator = null
         )
     {
         /// <summary>

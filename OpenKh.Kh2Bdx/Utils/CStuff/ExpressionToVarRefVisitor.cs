@@ -223,21 +223,82 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             if (conditionalExpression.logicalOrExpression() is var logicalOrExpression
                 && logicalOrExpression != null)
             {
-                return VisitLogicalOrExpression(logicalOrExpression);
+                var condition = VisitLogicalOrExpression(logicalOrExpression);
+                if (conditionalExpression.Question() == null)
+                {
+                    return condition;
+                }
+
+                // c ? a : b
+                //   c; beqz Lelse; a; b Lend; Lelse: b; Lend:
+                var sourceRef = GetSourceRef(conditionalExpression);
+                var whenTrue = Promote(DecayArray(VisitExpression(conditionalExpression.expression())));
+                var whenFalse = Promote(DecayArray(VisitAssignment(conditionalExpression.assignmentExpression())));
+
+                if (condition.Getter == null || whenTrue.Getter == null || whenFalse.Getter == null)
+                {
+                    throw new CompilerException(sourceRef, "Operands of ?: must have values");
+                }
+
+                if ((whenTrue.Type.IsStruct && whenTrue.Type.PointerDepth == 0) || (whenFalse.Type.IsStruct && whenFalse.Type.PointerDepth == 0)
+                    || whenTrue.Type == TypeDesc.Void || whenFalse.Type == TypeDesc.Void)
+                {
+                    throw new CompilerException(sourceRef, "Operands of ?: must be scalars");
+                }
+
+                // the type of the result: the pointer, else the float, else the type of the first when both are alike
+                var resultType = whenTrue.Type == whenFalse.Type ? whenTrue.Type
+                    : whenTrue.Type.PointerDepth != 0 ? whenTrue.Type
+                    : whenFalse.Type.PointerDepth != 0 ? whenFalse.Type
+                    : (whenTrue.Type == TypeDesc.Float32 || whenFalse.Type == TypeDesc.Float32) ? TypeDesc.Float32
+                    : TypeDesc.Int32;
+
+                var trueConverter = CHelper.GetConverter(whenTrue.Type, resultType)
+                    ?? throw new CompilerException(sourceRef, $"Cannot convert from {whenTrue.Type.Display} to {resultType.Display}");
+                var falseConverter = CHelper.GetConverter(whenFalse.Type, resultType)
+                    ?? throw new CompilerException(sourceRef, $"Cannot convert from {whenFalse.Type.Display} to {resultType.Display}");
+
+                var labels = NewLabels(sourceRef);
+                var elseLabel = labels("else");
+                var endLabel = labels("endsel");
+
+                return new VarRef(
+                    Type: resultType,
+                    Getter: CHelper.JoinLines(
+                        condition.Getter,
+                        $"beqz {elseLabel}",
+                        whenTrue.Getter,
+                        trueConverter,
+                        $"b {endLabel}",
+                        $"{elseLabel}:",
+                        whenFalse.Getter,
+                        falseConverter,
+                        $"{endLabel}:"
+                    )
+                );
             }
 
             throw new CompilerException(GetSourceRef(conditionalExpression), "Unsupported conditional expression");
         }
 
+        private Func<string, string> NewLabels(SourceRef sourceRef)
+        {
+            return CHelper.NextUniqueLabelGenerator?.Invoke()
+                ?? throw new CompilerException(sourceRef, "Logical operators and ?: are not available outside of functions");
+        }
+
+        private static VarRef DecayArray(VarRef value) => value.Type.IsArray ? value with { Type = value.Type.Decay() } : value;
+
         private VarRef VisitLogicalOrExpression(LogicalOrExpressionContext logicalOrExpression)
         {
-            if (logicalOrExpression.logicalAndExpression() is var logicalAndExpressions)
+            if (logicalOrExpression.logicalAndExpression() is { Length: > 0 } operands)
             {
-                switch (logicalAndExpressions?.Length)
+                var result = VisitLogicalAndExpression(operands[0]);
+                for (int x = 1; x < operands.Length; x++)
                 {
-                    case 1:
-                        return VisitLogicalAndExpression(logicalAndExpressions[0]);
+                    result = ShortCircuit(isAnd: false, result, VisitLogicalAndExpression(operands[x]), GetSourceRef(operands[x]));
                 }
+                return result;
             }
 
             throw new CompilerException(GetSourceRef(logicalOrExpression), "Unsupported logical or expression");
@@ -245,16 +306,64 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
         private VarRef VisitLogicalAndExpression(LogicalAndExpressionContext logicalAndExpression)
         {
-            if (logicalAndExpression.inclusiveOrExpression() is var inclusiveOrExpressions)
+            if (logicalAndExpression.inclusiveOrExpression() is { Length: > 0 } operands)
             {
-                switch (inclusiveOrExpressions?.Length)
+                var result = VisitInclusiveOrExpression(operands[0]);
+                for (int x = 1; x < operands.Length; x++)
                 {
-                    case 1:
-                        return VisitInclusiveOrExpression(inclusiveOrExpressions[0]);
+                    result = ShortCircuit(isAnd: true, result, VisitInclusiveOrExpression(operands[x]), GetSourceRef(operands[x]));
                 }
+                return result;
             }
 
             throw new CompilerException(GetSourceRef(logicalAndExpression), "Unsupported logical and expression");
+        }
+
+        /// <summary>
+        /// `a && b` and `a || b`, as real data does it: the left side is evaluated, and when it decides the result
+        /// the right side is skipped.
+        ///   a; dup; beqz Lend; b; land; Lend:        (a || b: bnez, lor)
+        /// The value is 0 or 1.
+        /// </summary>
+        private VarRef ShortCircuit(bool isAnd, VarRef left, VarRef right, SourceRef sourceRef)
+        {
+            left = Promote(DecayArray(left));
+            right = Promote(DecayArray(right));
+
+            foreach (var operand in new[] { left, right })
+            {
+                if (operand.Getter == null || operand.Type == TypeDesc.Void || (operand.Type.IsStruct && operand.Type.PointerDepth == 0))
+                {
+                    throw new CompilerException(sourceRef, "Operands of a logical operator must be scalars");
+                }
+            }
+
+            // When the left side decides, it is the result, so for || it must be 0 or 1 (for &&, it is the 0 itself).
+            // The result of a comparison is already 0 or 1.
+            var leftBool = isAnd || IsZeroOrOne(left.Getter!)
+                ? left.Getter
+                : CHelper.JoinLines(left.Getter, left.Type.Comparators?.Snez ?? throw new CompilerException(sourceRef, $"Cannot test {left.Type.Display}"));
+
+            var end = NewLabels(sourceRef)("endlogic");
+
+            return new VarRef(
+                Type: TypeDesc.Int32,
+                Getter: CHelper.JoinLines(
+                    leftBool,
+                    "dup",
+                    $"{(isAnd ? "beqz" : "bnez")} {end}",
+                    right.Getter,
+                    isAnd ? "land" : "lor",
+                    $"{end}:"
+                )
+            );
+        }
+
+        private static bool IsZeroOrOne(string code)
+        {
+            var last = code.Split('\n').Select(it => it.Trim()).LastOrDefault(it => it != "");
+            return last is "seqz" or "snez" or "sltz" or "slez" or "sgez" or "sgtz"
+                or "seqz.s" or "snez.s" or "sltz.s" or "slez.s" or "sgez.s" or "sgtz.s" or "land" or "lor";
         }
 
         private VarRef VisitInclusiveOrExpression(InclusiveOrExpressionContext inclusiveOrExpression)

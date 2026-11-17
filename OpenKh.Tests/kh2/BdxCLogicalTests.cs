@@ -270,6 +270,57 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void LogicalAndSkipsTheRightSideWhenTheLeftIsZero()
+        {
+            var s = Compile("int f(int a, int b) { return a && b; }");
+            Assert.Contains(" push.d.sp 0 ; a\n dup\n beqz __f1endlogic\n push.d.sp 4 ; b\n land\n__f1endlogic:\n", s);
+        }
+
+        [Fact]
+        public void LogicalOrNormalizesALeftSideThatIsNotAComparison()
+        {
+            var s = Compile("int f(int a, int b) { return a || b; }");
+            Assert.Contains(" push.d.sp 0 ; a\n snez\n dup\n bnez __f1endlogic\n push.d.sp 4 ; b\n lor\n__f1endlogic:\n", s);
+            // the result of a comparison is already 0 or 1
+            var c = Compile("int f(int a, int b) { return a < b || b; }");
+            Assert.Contains(" sltz\n dup\n bnez ", c);
+        }
+
+        [Fact]
+        public void LogicalChainsFoldToTheLeft()
+        {
+            var s = Compile("int f(int a, int b, int c) { return a && b && c; }");
+            Assert.Contains("__f1endlogic:\n dup\n beqz __f2endlogic\n push.d.sp 8 ; c\n land\n__f2endlogic:\n", s);
+        }
+
+        [Fact]
+        public void ConditionalExpressionBranchesAroundTheUnusedSide()
+        {
+            var s = Compile("int f(int c, int a, int b) { return c ? a : b; }");
+            Assert.Contains(
+                " push.d.sp 0 ; c\n beqz __f1else\n push.d.sp 4 ; a\n b __f1endsel\n__f1else:\n push.d.sp 8 ; b\n__f1endsel:\n",
+                s
+            );
+        }
+
+        [Fact]
+        public void ConditionalExpressionConvertsToTheCommonType()
+        {
+            var s = Compile("float f(int c, int a, float b) { return c ? a : b; }");
+            Assert.Contains(" push.d.sp 4 ; a\n cvt.w.s\n b ", s);
+        }
+
+        [Theory]
+        [InlineData("struct S { int a; }; int f(struct S s) { return s && 1; }")]
+        [InlineData("struct S { int a; }; void f(int c, struct S a, struct S b) { c ? a : b; }")]
+        [InlineData("void g() { } int f() { return g() || 1; }")]
+        [InlineData("int a = 1 && 2; void f() { }")]
+        public void BadLogicalOperands(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
         public void CompoundAssignmentThroughPointerEvaluatesTheAddressOnce()
         {
             var s = Compile("void f(int *q) { *q += 2; }");

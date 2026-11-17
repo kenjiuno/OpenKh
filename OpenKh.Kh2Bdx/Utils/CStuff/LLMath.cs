@@ -58,10 +58,29 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             ApplyLOr: "lor"
             );
 
-        public static LLMath PointerVer = new LLMath(
+        private static readonly Dictionary<int, LLMath> _pointerVers = new();
+
+        /// <summary>
+        /// Pointer arithmetic. `p + n` moves n elements, so n is multiplied by the size of one element in bytes.
+        /// </summary>
+        public static LLMath PointerVerOf(int stride)
+        {
+            lock (_pointerVers)
+            {
+                if (!_pointerVers.TryGetValue(stride, out var math))
+                {
+                    _pointerVers[stride] = math = PointerVerCore(stride);
+                }
+                return math;
+            }
+        }
+
+        public static LLMath PointerVer => PointerVerOf(4);
+
+        private static LLMath PointerVerCore(int stride) => new LLMath(
             ApplyNeg: null,
-            ApplyAdd: "push 4\nmul\nadd",
-            ApplySub: "push 4\nmul\nsub",
+            ApplyAdd: $"push {stride}\nmul\nadd",
+            ApplySub: $"push {stride}\nmul\nsub",
             ApplyDiv: null,
             ApplyMul: null,
             ApplyMod: null,

@@ -205,15 +205,26 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         var pointerDeclarator = declarator.pointerDeclarator()
                             ?? throw new CompilerException(GetSourceRef(declarator), "Unsupported member declarator");
                         var noPointerDeclarator = pointerDeclarator.noPointerDeclarator();
-                        if (noPointerDeclarator?.LeftBracket() != null || noPointerDeclarator?.parametersAndQualifiers() != null)
-                        {
-                            throw new CompilerException(GetSourceRef(declarator), "Array and function members are not supported");
-                        }
-
                         var memberType = memberBaseType;
                         foreach (var _ in pointerDeclarator.pointerOperator())
                         {
                             memberType = memberType.MakePointerType();
+                        }
+
+                        // arrays: `int v[3]`, `int m[2][3]` (the last bracket is the innermost element type)
+                        var arrayDeclarator = noPointerDeclarator;
+                        while (arrayDeclarator?.LeftBracket() != null && arrayDeclarator.noPointerDeclarator() is { } innerDeclarator)
+                        {
+                            var length = arrayDeclarator.constantExpression() is { } constantExpression
+                                ? ConstEval.EvaluateArrayLength(constantExpression, GetSourceRef)
+                                : throw new CompilerException(GetSourceRef(declarator), "Array member needs a length");
+                            memberType = ArrayTypes.Make(memberType, length, GetSourceRef(declarator));
+                            arrayDeclarator = innerDeclarator;
+                        }
+
+                        if (arrayDeclarator?.parametersAndQualifiers() != null)
+                        {
+                            throw new CompilerException(GetSourceRef(declarator), "Function members are not supported");
                         }
 
                         if (memberType.Size == 0)
@@ -265,6 +276,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 if (pointerDeclarator.noPointerDeclarator() is var noPointerDeclarator
                     && noPointerDeclarator != null)
                 {
+                    // `v[2][3]`: the name is at the bottom of the bracket chain
+                    while (noPointerDeclarator.declaratorid() == null && noPointerDeclarator.noPointerDeclarator() is { } inner)
+                    {
+                        noPointerDeclarator = inner;
+                    }
+
                     if (noPointerDeclarator.declaratorid() is var declaratorid
                         && declaratorid != null)
                     {

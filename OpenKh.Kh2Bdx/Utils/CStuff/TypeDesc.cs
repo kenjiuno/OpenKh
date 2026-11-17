@@ -6,6 +6,12 @@ using System.Threading.Tasks;
 
 namespace OpenKh.Kh2Bdx.Utils.CStuff
 {
+    /// <param name="ArrayLength">
+    /// Length of an array type. -1 for `int a[]`, whose length comes from the initializer.
+    /// An array type is a pointer type (to <paramref name="ElementType"/>) whose value is the address of its first element,
+    /// so it decays to the pointer for free. Its storage is <see cref="StructVar.SlotsOf"/> slots.
+    /// </param>
+    /// <param name="ElementType">the type of one element, or null if this is not an array type</param>
     internal record TypeDesc(
         string BaseName,
         int Size,
@@ -14,10 +20,16 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         int PointerDepth = 0,
         TypeDesc? BaseType = null,
         bool IsStruct = false,
-        IReadOnlyList<StructMember>? Members = null
+        IReadOnlyList<StructMember>? Members = null,
+        int ArrayLength = 0,
+        TypeDesc? ElementType = null
         )
     {
-        public string Display => $"{BaseName}{new string('*', PointerDepth)}";
+        public bool IsArray => ElementType != null;
+
+        public string Display => IsArray
+            ? $"{ElementType!.Display}[{(0 <= ArrayLength ? ArrayLength.ToString() : "")}]"
+            : $"{BaseName}{new string('*', PointerDepth)}";
 
         public static TypeDesc Void = new TypeDesc(
             BaseName: "void",
@@ -79,14 +91,33 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             {
                 Size = 4,
                 Comparators = LLComparators.IntVer,
-                Math = LLMath.PointerVer,
+                // `p + 1` moves by what p points to: this one element in bytes (every scalar is a 4-byte slot)
+                Math = LLMath.PointerVerOf(4 * StructVar.SlotsOf(this)),
                 PointerDepth = PointerDepth + 1,
                 IsStruct = false,
                 Members = null,
+                ArrayLength = 0,
+                ElementType = null,
                 BaseType = (PointerDepth == 0) 
                     ? this 
                     : BaseType ?? throw new Exception($"BaseType must exists of {Display}"),
             };
         }
+
+        /// <summary>
+        /// An array of this type. The value of an array is the address of its first element, so it is also
+        /// a pointer to this type, which moves by one element for `a + 1`.
+        /// </summary>
+        public TypeDesc MakeArrayType(int length)
+        {
+            return MakePointerType() with
+            {
+                ArrayLength = length,
+                ElementType = this,
+            };
+        }
+
+        /// <summary>What an array becomes when it is used as a value: a pointer to its element type.</summary>
+        public TypeDesc Decay() => IsArray ? ElementType!.MakePointerType() : this;
     }
 }

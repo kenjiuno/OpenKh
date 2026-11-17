@@ -94,6 +94,21 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                                 varTypePair.TypeDesc
                             );
 
+                            if (varPair.Type.IsArray && varPair.Type.ArrayLength < 0)
+                            {
+                                // `int a[] = { 1, 2, 3 };` the length is the number of the initializers
+                                var braced = (initDeclarator.initializer() is { } init) ? GetBracedInitList(init) : null;
+                                if (braced == null)
+                                {
+                                    throw new CompilerException(GetSourceRef(declarator), $"Array '{varPair.Name}' needs a length or a {{ ... }} initializer");
+                                }
+                                var count = braced.initializerList()?.initializerClause().Length ?? 0;
+                                varPair = varPair with
+                                {
+                                    Type = ArrayTypes.Make(varPair.Type.ElementType!, count, GetSourceRef(declarator)),
+                                };
+                            }
+
                             if (varTypePair.Static)
                             {
                                 assignTo = CHelper.DeclareStaticVar(varPair, GetSourceRef(declarator));
@@ -207,6 +222,30 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             var clauses = list.initializerList()?.initializerClause()
                 ?? Array.Empty<CPP14Parser.InitializerClauseContext>();
 
+            if (target.Type.IsArray)
+            {
+                // int a[3] = { 1, 2 };  elements in order, the rest are zero
+                var elements = target.Elements ?? throw new CompilerException(GetSourceRef(list), $"Cannot initialize {target.Type.Display}");
+
+                if (elements.Count < clauses.Length)
+                {
+                    throw new CompilerException(GetSourceRef(clauses[elements.Count]), $"Too many initializers for {target.Type.Display}");
+                }
+
+                for (int x = 0; x < elements.Count; x++)
+                {
+                    if (x < clauses.Length)
+                    {
+                        WriteInitClause(elements[x], clauses[x], writeTo);
+                    }
+                    else
+                    {
+                        WriteZero(elements[x], writeTo);
+                    }
+                }
+                return;
+            }
+
             if (IsStructValue(target.Type))
             {
                 var members = target.Type.Members ?? throw new CompilerException(GetSourceRef(list), $"Incomplete type {target.Type.Display}");
@@ -254,6 +293,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return;
             }
 
+            if (target.Type.IsArray)
+            {
+                throw new CompilerException(GetSourceRef(clause), $"Cannot initialize {target.Type.Display} from an expression; use {{ ... }}");
+            }
+
             var rval = VisitInitializerClause(clause)!;
 
             if (IsStructValue(target.Type))
@@ -279,6 +323,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
         private void WriteZero(VarRef target, TextWriter writeTo)
         {
+            if (target.Type.IsArray)
+            {
+                foreach (var element in target.Elements!)
+                {
+                    WriteZero(element, writeTo);
+                }
+                return;
+            }
+
             if (IsStructValue(target.Type))
             {
                 foreach (var member in target.Type.Members!)

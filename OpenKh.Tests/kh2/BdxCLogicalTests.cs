@@ -610,6 +610,124 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void ConstantIndexOfLocalArrayIsItsSlot()
+        {
+            var s = Compile("void f() { int a[3]; a[1] = 5; }");
+            Assert.Contains(" push 5\n dup\n pop.sp 4 ; a.1\n drop\n", s);
+        }
+
+        [Fact]
+        public void DynamicIndexAddsIndexTimesElementSize()
+        {
+            var s = Compile("int f(int i) { int a[3]; return a[i]; }");
+            Assert.Contains(" push.sp 4 ; &a\n push.d.sp 0 ; i\n push 4\n mul\n add\n push.d.pop 0 ; deref\n", s);
+        }
+
+        [Fact]
+        public void DynamicIndexOfStructArrayUsesStructSize()
+        {
+            var s = Compile("struct P { int x; int y; }; int f(int i) { struct P a[3]; return a[i].y; }");
+            Assert.Contains(" push 8\n mul\n add\n push.d.pop 4\n", s);
+        }
+
+        [Fact]
+        public void PointerArithmeticMovesByThePointee()
+        {
+            Assert.Contains(" push 1\n push 8\n mul\n add\n", Compile("struct P { int x; int y; }; void f(struct P *p) { struct P *q = p + 1; }"));
+            Assert.Contains(" push 1\n push 4\n mul\n add\n", Compile("void f(int *p) { int *q = p + 1; }"));
+        }
+
+        [Fact]
+        public void GlobalArrayHasLabelsForEveryElement()
+        {
+            var s = Compile("int g[2][3]; void f() { g[1][2] = 4; }");
+            Assert.Contains(" pop.wp g.1.2\n", s);
+            Assert.Contains("g.1:\ng.1.0:\n resb 4\ng.1.1:\n resb 4\ng.1.2:\n resb 4", s);
+            var r = new BdxCEncoder().EncodeC("int g[2][3]; void f() { }", "w.c");
+            Assert.Equal(24, r.WorkSize);
+        }
+
+        [Fact]
+        public void ArrayTakesOneSlotPerElementInTheFrame()
+        {
+            // 3 slots + 2 system DWORDs = 5, aligned to 8
+            Assert.Contains("jal 8, g", Compile("void g() { } void f() { int a[3]; g(); }"));
+        }
+
+        [Fact]
+        public void ArrayDecaysToPointerWhenPassed()
+        {
+            var s = Compile("int sum(int *p) { return p[0]; } int f() { int a[2]; return sum(a); }");
+            Assert.Contains(" push.sp 0 ; &a\n jal ", s);
+        }
+
+        [Fact]
+        public void ArrayParameterIsPointer()
+        {
+            var s = Compile("int f(int a[], int i) { return a[i]; }");
+            Assert.Contains(" push.d.sp 0 ; a\n push.d.sp 4 ; i\n push 4\n mul\n add\n push.d.pop 0 ; deref\n", s);
+        }
+
+        [Fact]
+        public void ArrayInitializerFillsTheRestWithZero()
+        {
+            var s = Compile("void f() { int a[3] = { 1 }; }");
+            Assert.Contains(" push 1\n pop.sp 0 ; a.0\n push 0\n pop.sp 4 ; a.1\n push 0\n pop.sp 8 ; a.2\n", s);
+        }
+
+        [Fact]
+        public void ArrayLengthComesFromTheInitializer()
+        {
+            var s = Compile("int g[] = { 5, 6 }; void f() { }");
+            Assert.Contains("_initc:\n push 5\n pop.wp g.0\n push 6\n pop.wp g.1\n ret\n", s);
+            Assert.Equal(8, new BdxCEncoder().EncodeC("int g[] = { 5, 6 }; void f() { }", "w.c").WorkSize);
+        }
+
+        [Fact]
+        public void NestedArrayInitializer()
+        {
+            var s = Compile("void f() { int m[2][2] = { { 1, 2 }, { 3 } }; }");
+            Assert.Contains(" push 1\n pop.sp 0 ; m.0.0\n push 2\n pop.sp 4 ; m.0.1\n push 3\n pop.sp 8 ; m.1.0\n push 0\n pop.sp 12 ; m.1.1\n", s);
+        }
+
+        [Fact]
+        public void ArrayMemberOfStructIsCopiedElementByElement()
+        {
+            var s = Compile("struct B { int id; int v[2]; }; void f() { struct B a; struct B b; b = a; }");
+            Assert.Contains(" push.d.sp 4 ; a.v.0\n pop.sp 16 ; b.v.0\n push.d.sp 8 ; a.v.1\n pop.sp 20 ; b.v.1\n", s);
+        }
+
+        [Fact]
+        public void ArrayMemberIsPassedByValueWithTheStruct()
+        {
+            var s = Compile("struct B { int v[2]; }; void g(struct B b) { } void f() { struct B a; g(a); }");
+            Assert.Contains(" push.d.sp 4 ; a.v.1\n push.d.sp 0 ; a.v.0\n jal ", s);
+        }
+
+        [Theory]
+        [InlineData("void f() { char c[4]; }")]
+        [InlineData("void f() { short s[2]; }")]
+        [InlineData("struct S { char c[3]; }; void f() { }")]
+        [InlineData("void f() { int a[0]; }")]
+        [InlineData("void f() { int a[-1]; }")]
+        [InlineData("void f(int n) { int a[n]; }")]
+        [InlineData("void f() { int a[]; }")]
+        [InlineData("void f() { int a[2][]; }")]
+        [InlineData("void f() { int a[2]; a[2] = 1; }")]
+        [InlineData("void f() { int a[2]; a[-1] = 1; }")]
+        [InlineData("void f() { int a[2]; int *p = &a; }")]
+        [InlineData("void f() { int a[2]; int b[2]; a = b; }")]
+        [InlineData("void f() { int a[2] = { 1, 2, 3 }; }")]
+        [InlineData("void f() { int a[2] = 1; }")]
+        [InlineData("void f() { int a[2]; float x; a[x] = 1; }")]
+        [InlineData("void f() { int a; a[0] = 1; }")]
+        [InlineData("void f() { char *s; s[1] = 1; }")]
+        public void BadArrays(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
         public void InitcIsGlobalInitializersThenRet()
         {
             var s = new BdxCEncoder().EncodeC("int g = 5; void main() { }", "i.c").Bdscript.Replace("\r\n", "\n");

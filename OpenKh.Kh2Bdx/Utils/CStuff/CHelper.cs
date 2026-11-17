@@ -135,6 +135,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
         internal string? GetConverter(TypeDesc FromType, TypeDesc ToType)
         {
+            if (FromType.IsArray)
+            {
+                // an array is used as the pointer to its first element
+                FromType = FromType.Decay();
+            }
+
             if (FromType == ToType)
             {
                 return "";
@@ -191,8 +197,68 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             );
         }
 
+        /// <summary>
+        /// `array[index]` and `pointer[index]`, that is `*(array + index)`.
+        /// </summary>
+        internal VarRef Index(VarRef array, VarRef index, SourceRef sourceRef)
+        {
+            var type = array.Type;
+            if (!type.IsArray && type.PointerDepth == 0)
+            {
+                throw new CompilerException(sourceRef, $"Subscripted value is neither an array nor a pointer: {type.Display}");
+            }
+
+            if (!type.IsArray && type.PointerDepth == 1 && type.BaseType is { IsStruct: false, Size: > 0 and < 4 })
+            {
+                throw new CompilerException(sourceRef, $"Indexing {type.Display} is not supported: memory is word based");
+            }
+
+            if (index.Getter == null || index.Type.PointerDepth != 0 || index.Type.IsStruct || index.Type.Math != LLMath.IntVer)
+            {
+                throw new CompilerException(sourceRef, "Array index must be an integer");
+            }
+
+            // a variable at a known place with a constant index is just that element
+            if (array.Elements != null && ConstEval.TryEvaluateCode(index.Getter, out var constantIndex))
+            {
+                if (constantIndex < 0 || array.Elements.Count <= constantIndex)
+                {
+                    throw new CompilerException(sourceRef, $"Index {constantIndex} is out of the bounds of {type.Display}");
+                }
+                return array.Elements[constantIndex];
+            }
+
+            var indexConverter = GetConverter(index.Type, TypeDesc.Int32)
+                ?? throw new CompilerException(sourceRef, $"Cannot use {index.Type.Display} as an array index");
+
+            // the size of one element in bytes
+            var stride = type.IsArray
+                ? 4 * StructVar.SlotsOf(type.ElementType!)
+                : (type.PointerDepth == 1 ? 4 * StructVar.SlotsOf(type.BaseType!) : 4);
+
+            var address = JoinLines(
+                array.Getter ?? throw new CompilerException(sourceRef, "Array has no address"),
+                index.Getter,
+                indexConverter,
+                $"push {stride}",
+                "mul",
+                "add"
+            );
+
+            return Deref(new VarRef(Type: type, Getter: address, GetPointer: address), sourceRef);
+        }
+
         internal VarRef Deref(VarRef lval, SourceRef sourceRef)
         {
+            if (lval.Type.IsArray)
+            {
+                // *array is the first element (or the first sub-array, whose value is just its address)
+                var element = lval.Type.ElementType!;
+                return element.IsArray
+                    ? new VarRef(Type: element, Getter: lval.Getter, GetPointer: lval.Getter)
+                    : Deref(new VarRef(Type: element.MakePointerType(), Getter: lval.Getter, GetPointer: lval.GetPointer), sourceRef);
+            }
+
             if (lval.Type.PointerDepth == 0)
             {
                 throw new CompilerException(sourceRef, $"Cannot dereference non-pointer type {lval.Type.Display}");
@@ -245,6 +311,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var newType = lval.Type with
                 {
                     PointerDepth = lval.Type.PointerDepth - 1,
+                    // `p + 1` moves by what the new type points to
+                    Math = LLMath.PointerVerOf(
+                        (lval.Type.PointerDepth - 1 == 1) ? 4 * StructVar.SlotsOf(lval.Type.BaseType!) : 4
+                    ),
                 };
 
                 return new VarRef(
@@ -286,6 +356,16 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             void Copy(VarRef to, VarRef from)
             {
+                if (to.Type.IsArray)
+                {
+                    // an array member of the struct is copied element by element
+                    for (int x = 0; x < to.Elements!.Count; x++)
+                    {
+                        Copy(to.Elements[x], from.Elements![x]);
+                    }
+                    return;
+                }
+
                 if (IsStructValue(to.Type))
                 {
                     foreach (var member in to.Type.Members!)
@@ -307,7 +387,17 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// <summary>The scalar members of a struct value in slot order (nested structs are flattened).</summary>
         internal IEnumerable<VarRef> StructLeaves(VarRef value)
         {
-            if (value.Type.IsStruct && value.Type.PointerDepth == 0 && value.Type.Members != null)
+            if (value.Type.IsArray)
+            {
+                foreach (var element in value.Elements!)
+                {
+                    foreach (var leaf in StructLeaves(element))
+                    {
+                        yield return leaf;
+                    }
+                }
+            }
+            else if (value.Type.IsStruct && value.Type.PointerDepth == 0 && value.Type.Members != null)
             {
                 foreach (var member in value.Type.Members)
                 {
@@ -325,6 +415,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
         internal VarRef MakePointer(VarRef lval, SourceRef sourceRef)
         {
+            if (lval.Type.IsArray)
+            {
+                throw new CompilerException(sourceRef, $"Address of an array is not supported: use the array itself or &a[0]");
+            }
+
             var newType = lval.Type.MakePointerType();
 
             return new VarRef(

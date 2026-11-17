@@ -1091,6 +1091,17 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return VisitPrimaryExpression(primaryExpression);
             }
 
+            if (postfixExpression.postfixExpression() is { } arrayExpression
+                && postfixExpression.LeftBracket() != null)
+            {
+                // a[i]
+                var indexExpression = postfixExpression.expression()
+                    ?? throw new CompilerException(GetSourceRef(postfixExpression), "Braced initializer is not supported as an array index");
+                var array = VisitPostfixExpression(arrayExpression);
+                var index = VisitExpression(indexExpression);
+                return CHelper.Index(array, index, GetSourceRef(postfixExpression));
+            }
+
             if (postfixExpression.postfixExpression() is var callee
                 && callee != null
                 && postfixExpression.LeftParen() != null)

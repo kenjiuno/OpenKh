@@ -94,11 +94,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     : null,
                 DeclareVar: (argPair, sourceRef) =>
                 {
-                    if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
+                    if ((argPair.Type.IsStruct && argPair.Type.PointerDepth == 0) || argPair.Type.IsArray)
                     {
-                        // every member gets its own label (s.a, s.inner.b, ...) at consecutive addresses
-                        bssSeg.WriteLine($"{argPair.Name}:");
-                        WriteStructLabels(bssSeg, argPair.Type, argPair.Name, "resb 4");
+                        // every member / element gets its own label (s.a, s.inner.b, a.0, a.1, ...) at consecutive addresses
+                        WriteLeafLabels(bssSeg, argPair.Type, argPair.Name, "resb 4");
                         return globalVarRefDict[argPair.Name] = StructVar.Build(
                             argPair.Type,
                             0,
@@ -124,10 +123,9 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 },
                 DeclareStaticVar: (argPair, sourceRef) =>
                 {
-                    if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
+                    if ((argPair.Type.IsStruct && argPair.Type.PointerDepth == 0) || argPair.Type.IsArray)
                     {
-                        staticDataSeg.WriteLine($"{argPair.Name}:");
-                        WriteStructLabels(staticDataSeg, argPair.Type, argPair.Name, "resw 2");
+                        WriteLeafLabels(staticDataSeg, argPair.Type, argPair.Name, "resw 2");
                         return globalVarRefDict[argPair.Name] = StructVar.Build(
                             argPair.Type,
                             0,
@@ -238,20 +236,31 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         }
 
         /// <summary>Emit a label per member (s.a, s.inner.b) and reserve a slot for each scalar leaf.</summary>
-        private static void WriteStructLabels(TextWriter writer, TypeDesc type, string path, string reserve)
+        /// <summary>
+        /// A label for the variable, then one for each member (s.a, s.inner.b) and element (a.0, a.1, m.1.2) of it
+        /// at consecutive addresses. Every scalar reserves <paramref name="reserve"/>.
+        /// </summary>
+        private static void WriteLeafLabels(TextWriter writer, TypeDesc type, string path, string reserve)
         {
-            foreach (var member in type.Members!)
+            writer.WriteLine($"{path}:");
+
+            if (type.IsArray)
             {
-                var memberPath = path + "." + member.Name;
-                writer.WriteLine($"{memberPath}:");
-                if (member.Type.IsStruct && member.Type.PointerDepth == 0)
+                for (int x = 0; x < type.ArrayLength; x++)
                 {
-                    WriteStructLabels(writer, member.Type, memberPath, reserve);
+                    WriteLeafLabels(writer, type.ElementType!, $"{path}.{x}", reserve);
                 }
-                else
+            }
+            else if (type.IsStruct && type.PointerDepth == 0)
+            {
+                foreach (var member in type.Members!)
                 {
-                    writer.WriteLine($" {reserve}");
+                    WriteLeafLabels(writer, member.Type, path + "." + member.Name, reserve);
                 }
+            }
+            else
+            {
+                writer.WriteLine($" {reserve}");
             }
         }
 
@@ -432,12 +441,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 DeclareVar: (argPair, sourceRef) =>
                 {
                     var numBytes = argPair.Type.Size;
-                    var spIndex = parent.AllocateStackItems(
-                        (numBytes == 0)
-                            ? 1
-                            : (numBytes + 3) / 4
-                    );
-                    if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
+                    var spIndex = parent.AllocateStackItems(StructVar.SlotsOf(argPair.Type));
+                    if ((argPair.Type.IsStruct && argPair.Type.PointerDepth == 0) || argPair.Type.IsArray)
                     {
                         return varRefDict[argPair.Name] = StructVar.Build(
                             argPair.Type,

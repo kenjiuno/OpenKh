@@ -19,7 +19,19 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             )
                 .TypeDesc;
 
-            return ReduceParameterDeclaration(parameterDeclaration, baseType);
+            var parameter = ReduceParameterDeclaration(parameterDeclaration, baseType);
+
+            if (parameter.Type.IsArray)
+            {
+                // `int a[]` as a parameter is a pointer
+                if (parameter.Type.ElementType!.IsArray)
+                {
+                    throw new CompilerException(GetSourceRef(parameterDeclaration), "Parameters of pointer-to-array type are not supported");
+                }
+                parameter = parameter with { Type = parameter.Type.Decay() };
+            }
+
+            return parameter;
         }
 
         private ArgPair ReduceParameterDeclaration(CPP14Parser.ParameterDeclarationContext parameterDeclaration, TypeDesc baseType)
@@ -83,6 +95,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             if (noPointerDeclarator.noPointerDeclarator() is var innerNoPointerDeclarator
                 && innerNoPointerDeclarator != null)
             {
+                if (noPointerDeclarator.LeftBracket() != null)
+                {
+                    // `a[3]`, `a[2][3]`, `a[]`: the last bracket is the innermost element type
+                    var length = noPointerDeclarator.constantExpression() is { } constantExpression
+                        ? ConstEval.EvaluateArrayLength(constantExpression, GetSourceRef)
+                        : -1;
+                    baseType = ArrayTypes.Make(baseType, length, GetSourceRef(noPointerDeclarator));
+                }
+
                 return ReduceNoPointerDeclarator(innerNoPointerDeclarator, baseType);
             }
 

@@ -270,6 +270,63 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void BraceElisionFillsASubArrayFromTheFollowingElements()
+        {
+            var s = Compile("void f() { int m[2][2] = { 1, 2, 3, 4 }; }");
+            Assert.Contains(" push 1\n pop.sp 0 ; m.0.0\n push 2\n pop.sp 4 ; m.0.1\n push 3\n pop.sp 8 ; m.1.0\n push 4\n pop.sp 12 ; m.1.1\n", s);
+        }
+
+        [Fact]
+        public void BraceElisionZeroFillsTheRest()
+        {
+            var s = Compile("void f() { int m[2][2] = { 1, 2, 3 }; }");
+            Assert.Contains(" push 3\n pop.sp 8 ; m.1.0\n push 0\n pop.sp 12 ; m.1.1\n", s);
+        }
+
+        [Fact]
+        public void BraceElisionMixesWithBracedElements()
+        {
+            var s = Compile("void f() { int m[3][2] = { { 1 }, 5, 6, 7 }; }");
+            // {1} is the first row (the rest zero), 5 and 6 the second, 7 starts the third
+            Assert.Contains(" push 1\n pop.sp 0 ; m.0.0\n push 0\n pop.sp 4 ; m.0.1\n push 5\n pop.sp 8 ; m.1.0\n push 6\n pop.sp 12 ; m.1.1\n push 7\n pop.sp 16 ; m.2.0\n", s);
+        }
+
+        [Fact]
+        public void BraceElisionOfStructMembersAndStructArrays()
+        {
+            var s = Compile("struct P { int x; int y; }; struct L { struct P a; struct P b; int t; }; void f() { struct L l = { 1, 2, 3, 4, 5 }; struct P ps[2] = { 1, 2, 3, 4 }; }");
+            Assert.Contains(" push 3\n pop.sp 8 ; l.b.x\n push 4\n pop.sp 12 ; l.b.y\n push 5\n pop.sp 16 ; l.t\n", s);
+            Assert.Contains(" push 3\n pop.sp 28 ; ps.1.x\n", s);
+        }
+
+        [Fact]
+        public void ArrayLengthIsInferredFromElidedBraces()
+        {
+            // 5 values in rows of 3: two rows, so n is after 6 slots
+            var s = Compile("void f() { int a[][3] = { 1, 2, 3, 4, 5 }; int n; n = 1; }");
+            Assert.Contains(" pop.sp 24 ; n\n", s);
+            // a struct value is one element
+            var p = Compile("struct P { int x; int y; }; void f() { struct P q; struct P a[] = { q, q }; int n; n = 1; }");
+            Assert.Contains(" pop.sp 24 ; n\n", p);
+        }
+
+        [Fact]
+        public void BraceElisionInCharAndShortMembers()
+        {
+            var s = Compile("struct N { int id; char name[4]; short v[2]; }; void f() { struct N n = { 9, \"abc\", 5, -6 }; }");
+            Assert.Contains(" push 9\n pop.sp 0 ; n.id\n push 6513249\n pop.sp 4 ; n.name.0\n push -393211\n pop.sp 8 ; n.v.0\n", s);
+        }
+
+        [Theory]
+        [InlineData("void f() { int m[2][2] = { 1, 2, 3, 4, 5 }; }")]
+        [InlineData("struct P { int x; int y; }; void f() { struct P p = { 1, 2, 3 }; }")]
+        [InlineData("struct P { int x; int y; }; void f() { struct P a[1] = { 1, 2, 3 }; }")]
+        public void TooManyInitializersAfterElision(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
         public void ShortStoreCopiesTwoBytes()
         {
             var s = Compile("void f(short *c) { *c = 1; }");

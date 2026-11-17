@@ -115,7 +115,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                                 }
                                 else if (braced != null)
                                 {
-                                    count = braced.initializerList()?.initializerClause().Length ?? 0;
+                                    count = CountElements(varPair.Type.ElementType!, braced.initializerList()?.initializerClause() ?? Array.Empty<CPP14Parser.InitializerClauseContext>());
                                 }
                                 else
                                 {
@@ -248,83 +248,25 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
         /// <summary>
         /// Initialize target with `{ a, b, ... }`. Elements follow the member order, nested braces initialize
-        /// nested structs, and members without an element are set to zero (as in C).
+        /// nested structs and arrays, members without an element are set to zero, and braces may be left out
+        /// (`int m[2][2] = { 1, 2, 3, 4 }`): an array or struct without its own braces takes the following elements.
         /// </summary>
         private void WriteBracedInit(VarRef target, CPP14Parser.BracedInitListContext list, TextWriter writeTo)
         {
             var clauses = list.initializerList()?.initializerClause()
                 ?? Array.Empty<CPP14Parser.InitializerClauseContext>();
 
-            if (target.Type.IsPackedArray)
+            if (target.Type.IsArray || IsStructValue(target.Type))
             {
-                // char s[8] = { 'a', 0 };  short h[4] = { 1, 2 };  constants, the rest are zero
-                var bytes = new List<byte>();
-                var length = target.Type.ArrayLength;
-                if (length < clauses.Length)
+                if (IsStructValue(target.Type) && target.Type.Members == null)
                 {
-                    throw new CompilerException(GetSourceRef(clauses[length]), $"Too many initializers for {target.Type.Display}");
-                }
-                foreach (var clause in clauses)
-                {
-                    if (clause.bracedInitList() != null || VisitInitializerClause(clause)?.Getter is not { } code
-                        || !ConstEval.TryEvaluateCode(code, out var value))
-                    {
-                        throw new CompilerException(GetSourceRef(clause), "An element of a char or short array must be a constant");
-                    }
-                    bytes.Add((byte)value);
-                    if (target.Type.ElementType!.IsShort)
-                    {
-                        bytes.Add((byte)(value >> 8));
-                    }
-                }
-                WriteBytes(target, bytes.ToArray(), writeTo);
-                return;
-            }
-
-            if (target.Type.IsArray)
-            {
-                // int a[3] = { 1, 2 };  elements in order, the rest are zero
-                var elements = target.Elements ?? throw new CompilerException(GetSourceRef(list), $"Cannot initialize {target.Type.Display}");
-
-                if (elements.Count < clauses.Length)
-                {
-                    throw new CompilerException(GetSourceRef(clauses[elements.Count]), $"Too many initializers for {target.Type.Display}");
+                    throw new CompilerException(GetSourceRef(list), $"Incomplete type {target.Type.Display}");
                 }
 
-                for (int x = 0; x < elements.Count; x++)
+                var end = WriteElements(target, clauses, 0, writeTo);
+                if (end < clauses.Length)
                 {
-                    if (x < clauses.Length)
-                    {
-                        WriteInitClause(elements[x], clauses[x], writeTo);
-                    }
-                    else
-                    {
-                        WriteZero(elements[x], writeTo);
-                    }
-                }
-                return;
-            }
-
-            if (IsStructValue(target.Type))
-            {
-                var members = target.Type.Members ?? throw new CompilerException(GetSourceRef(list), $"Incomplete type {target.Type.Display}");
-
-                if (members.Count < clauses.Length)
-                {
-                    throw new CompilerException(GetSourceRef(clauses[members.Count]), $"Too many initializers for {target.Type.Display}");
-                }
-
-                for (int x = 0; x < members.Count; x++)
-                {
-                    var member = target.Members![members[x].Name];
-                    if (x < clauses.Length)
-                    {
-                        WriteInitClause(member, clauses[x], writeTo);
-                    }
-                    else
-                    {
-                        WriteZero(member, writeTo);
-                    }
+                    throw new CompilerException(GetSourceRef(clauses[end]), $"Too many initializers for {target.Type.Display}");
                 }
                 return;
             }
@@ -342,6 +284,149 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             {
                 WriteInitClause(target, clauses[0], writeTo);
             }
+        }
+
+        /// <summary>
+        /// The elements of an array or the members of a struct, from clauses[pos]. Returns the position after the
+        /// clauses that were used.
+        /// </summary>
+        private int WriteElements(VarRef target, IReadOnlyList<CPP14Parser.InitializerClauseContext> clauses, int pos, TextWriter writeTo)
+        {
+            if (target.Type.IsPackedArray)
+            {
+                // char s[8] = { 'a', 0 };  short h[4] = { 1, 2 };  constants, the rest are zero
+                var bytes = new List<byte>();
+                for (int n = 0; n < target.Type.ArrayLength && pos < clauses.Count && clauses[pos].bracedInitList() == null; n++, pos++)
+                {
+                    if (VisitInitializerClause(clauses[pos])?.Getter is not { } code
+                        || !ConstEval.TryEvaluateCode(code, out var value))
+                    {
+                        throw new CompilerException(GetSourceRef(clauses[pos]), "An element of a char or short array must be a constant");
+                    }
+                    bytes.Add((byte)value);
+                    if (target.Type.ElementType!.IsShort)
+                    {
+                        bytes.Add((byte)(value >> 8));
+                    }
+                }
+                WriteBytes(target, bytes.ToArray(), writeTo);
+                return pos;
+            }
+
+            if (target.Type.IsArray)
+            {
+                // int a[3] = { 1, 2 };  elements in order, the rest are zero
+                var elements = target.Elements ?? throw new CompilerException(GetSourceRef(clauses[0]), $"Cannot initialize {target.Type.Display}");
+                foreach (var element in elements)
+                {
+                    pos = WriteMember(element, clauses, pos, writeTo);
+                }
+                return pos;
+            }
+
+            foreach (var member in target.Type.Members!)
+            {
+                pos = WriteMember(target.Members![member.Name], clauses, pos, writeTo);
+            }
+            return pos;
+        }
+
+        /// <summary>One element or member: a clause of its own, or (brace elision) the following clauses.</summary>
+        private int WriteMember(VarRef target, IReadOnlyList<CPP14Parser.InitializerClauseContext> clauses, int pos, TextWriter writeTo)
+        {
+            if (clauses.Count <= pos)
+            {
+                WriteZero(target, writeTo);
+                return pos;
+            }
+
+            var clause = clauses[pos];
+            if (clause.bracedInitList() is { } nested)
+            {
+                WriteBracedInit(target, nested, writeTo);
+                return pos + 1;
+            }
+
+            if (!target.Type.IsArray && !IsStructValue(target.Type))
+            {
+                WriteInitClause(target, clause, writeTo);
+                return pos + 1;
+            }
+
+            if (target.Type.IsByteArray && TryGetStringLiteral(clause) is { } literal)
+            {
+                WriteStringInit(target, literal, GetSourceRef(clause), writeTo);
+                return pos + 1;
+            }
+
+            if (IsStructValue(target.Type) && IsStructValueOf(target.Type, clause))
+            {
+                WriteInitClause(target, clause, writeTo);
+                return pos + 1;
+            }
+
+            // no braces of its own: it takes the following clauses
+            return WriteElements(target, clauses, pos, writeTo);
+        }
+
+        /// <summary>Is the clause an expression of the struct type (`struct P a = { p0, p1 };`)?</summary>
+        private bool IsStructValueOf(TypeDesc type, CPP14Parser.InitializerClauseContext clause)
+        {
+            return clause.assignmentExpression() != null
+                && VisitInitializerClause(clause) is { } value
+                && IsStructValue(value.Type)
+                && value.Type.BaseName == type.BaseName;
+        }
+
+        /// <summary>The number of elements of `T a[] = { ... }`, as the clauses fall to the elements.</summary>
+        private int CountElements(TypeDesc elementType, IReadOnlyList<CPP14Parser.InitializerClauseContext> clauses)
+        {
+            int Consume(TypeDesc type, int pos)
+            {
+                var clause = clauses[pos];
+                if (clause.bracedInitList() != null
+                    || (!type.IsArray && !IsStructValue(type))
+                    || (type.IsByteArray && TryGetStringLiteral(clause) != null)
+                    || (IsStructValue(type) && IsStructValueOf(type, clause)))
+                {
+                    return pos + 1;
+                }
+
+                if (type.IsPackedArray)
+                {
+                    for (int n = 0; n < type.ArrayLength && pos < clauses.Count && clauses[pos].bracedInitList() == null; n++)
+                    {
+                        pos++;
+                    }
+                    return pos;
+                }
+
+                if (type.IsArray)
+                {
+                    for (int n = 0; n < type.ArrayLength && pos < clauses.Count; n++)
+                    {
+                        pos = Consume(type.ElementType!, pos);
+                    }
+                    return pos;
+                }
+
+                foreach (var member in type.Members!)
+                {
+                    if (clauses.Count <= pos)
+                    {
+                        break;
+                    }
+                    pos = Consume(member.Type, pos);
+                }
+                return pos;
+            }
+
+            int count = 0;
+            for (int pos = 0; pos < clauses.Count; count++)
+            {
+                pos = Consume(elementType, pos);
+            }
+            return count;
         }
 
         private void WriteInitClause(VarRef target, CPP14Parser.InitializerClauseContext clause, TextWriter writeTo)

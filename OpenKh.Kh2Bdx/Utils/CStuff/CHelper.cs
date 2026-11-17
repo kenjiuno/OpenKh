@@ -432,12 +432,21 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             var lines = new List<string?>();
 
-            if (src.DiscardCode != null
-                && dst.GetPointer is { } dstPointer
-                && System.Text.RegularExpressions.Regex.Match(dstPointer, @"^push\.sp (\d+)( ;.*)?$") is { Success: true } local)
+            // The members are in consecutive slots, so the whole struct is one `memcpy`, as in real data
+            // (the size is the ssub of op4, which has 10 bits).
+            var size = dst.Type.Size;
+            var srcPointer = src.DiscardCode ?? src.GetPointer;
+            if (dst.GetPointer is { } dstPointer && srcPointer != null && 0 < size && size <= 1023)
             {
-                // call returning a struct, stored straight into a local: jal, then memcpy.sp from the returned pointer
-                return JoinLines(src.DiscardCode, $"memcpy.sp {dst.Type.Size}, {local.Groups[1].Value} ; {dst.Type.Display}")!;
+                if (System.Text.RegularExpressions.Regex.Match(dstPointer, @"^push\.sp (\d+)( ;.*)?$") is { Success: true } local)
+                {
+                    // into a local: the source pointer (for a call, the pointer it returns), then memcpy.sp
+                    // from the returned pointer
+                    return JoinLines(src.Prelude, srcPointer, $"memcpy.sp {size}, {local.Groups[1].Value} ; {dst.Type.Display}")!;
+                }
+
+                // anywhere else: destination pointer, then source pointer, then op4
+                return JoinLines(src.Prelude, dstPointer, srcPointer, $"memcpy {size} ; {dst.Type.Display}")!;
             }
 
             lines.Add(src.Prelude);

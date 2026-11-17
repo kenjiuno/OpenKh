@@ -416,7 +416,8 @@ namespace OpenKh.Tests.kh2
         {
             var s = Compile("struct N { int id; char name[6]; }; void f() { struct N a; struct N b; b = a; }");
             // id and the 2 slots of name
-            Assert.Contains(" push.d.sp 8 ; a.name.1\n pop.sp 20 ; b.name.1\n", s);
+            // id and the 2 slots of name are one memcpy of 12 bytes
+            Assert.Contains(" push.sp 0 ; &a\n memcpy.sp 12, 12 ; struct N\n", s);
         }
         [Fact]
         public void PointerStoreThroughIntPointer()
@@ -505,7 +506,8 @@ namespace OpenKh.Tests.kh2
         public void StructAssignmentCopiesMembers()
         {
             var s = Compile("struct P { int x; int y; }; void f() { struct P a; struct P b; b = a; }");
-            Assert.Contains(" push.d.sp 0 ; a.x\n pop.sp 8 ; b.x\n push.d.sp 4 ; a.y\n pop.sp 12 ; b.y\n", s);
+            // one memcpy for the whole struct, as real data does
+            Assert.Contains(" push.sp 0 ; &a\n memcpy.sp 8, 8 ; struct P\n", s);
             // no value is left on tp, so there is no dup / drop
             Assert.DoesNotContain("dup", s);
             Assert.DoesNotContain("drop", s);
@@ -515,23 +517,24 @@ namespace OpenKh.Tests.kh2
         public void StructInitializedByStructValue()
         {
             var s = Compile("struct P { int x; int y; }; void f() { struct P a; struct P b = a; }");
-            Assert.Contains(" push.d.sp 0 ; a.x\n pop.sp 8 ; b.x\n push.d.sp 4 ; a.y\n pop.sp 12 ; b.y\n", s);
+            Assert.Contains(" push.sp 0 ; &a\n memcpy.sp 8, 8 ; struct P\n", s);
         }
 
         [Fact]
         public void StructAssignmentThroughPointers()
         {
             var s = Compile("struct P { int x; }; void f(struct P *p, struct P *q) { *p = *q; }");
-            Assert.Contains("push.d.pop 0", s);
-            Assert.Contains("memcpy 0", s);
+            // destination pointer, source pointer, then one memcpy of the struct
+            Assert.Contains(" push.d.sp 0 ; p\n push.d.sp 4 ; q\n memcpy 4 ; struct P\n", s);
+            Assert.DoesNotContain("push.d.pop", s);
         }
 
         [Fact]
         public void NestedStructAssignment()
         {
             var s = Compile("struct P { int x; int y; }; struct L { struct P a; int t; }; void f() { struct L l; struct P p; p = l.a; l.a = p; }");
-            Assert.Contains(" push.d.sp 0 ; l.a.x\n pop.sp 12 ; p.x\n push.d.sp 4 ; l.a.y\n pop.sp 16 ; p.y\n", s);
-            Assert.Contains(" push.d.sp 12 ; p.x\n pop.sp 0 ; l.a.x\n", s);
+            Assert.Contains(" memcpy.sp 8, 12 ; struct P\n", s);
+            Assert.Contains(" push.sp 12 ; &p\n memcpy.sp 8, 0 ; struct P\n", s);
         }
 
         [Theory]
@@ -648,7 +651,7 @@ namespace OpenKh.Tests.kh2
         public void ReturnOfGlobalStructIsCopiedToHiddenLocal()
         {
             var s = Compile("struct P { int x; int y; }; struct P g; struct P f() { return g; }");
-            Assert.Contains(" push.d.wp g.x\n pop.sp 0 ; (return value).x\n push.d.wp g.y\n pop.sp 4 ; (return value).y\n push.sp 0 ; (return value)\n ret\n", s);
+            Assert.Contains(" push.wp g\n memcpy.sp 8, 0 ; struct P\n push.sp 0 ; (return value)\n ret\n", s);
         }
 
         [Fact]
@@ -839,10 +842,11 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
-        public void ArrayMemberOfStructIsCopiedElementByElement()
+        public void ArrayMemberOfStructIsCopiedWithTheStruct()
         {
             var s = Compile("struct B { int id; int v[2]; }; void f() { struct B a; struct B b; b = a; }");
-            Assert.Contains(" push.d.sp 4 ; a.v.0\n pop.sp 16 ; b.v.0\n push.d.sp 8 ; a.v.1\n pop.sp 20 ; b.v.1\n", s);
+            // the array member is part of the one memcpy of the struct
+            Assert.Contains(" push.sp 0 ; &a\n memcpy.sp 12, 12 ; struct B\n", s);
         }
 
         [Fact]

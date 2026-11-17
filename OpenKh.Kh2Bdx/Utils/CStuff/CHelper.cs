@@ -521,42 +521,6 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             return JoinLines(lines.ToArray())!;
         }
 
-        /// <summary>The scalar members of a struct value in slot order (nested structs are flattened).</summary>
-        internal IEnumerable<VarRef> StructLeaves(VarRef value)
-        {
-            if (value.Type.IsPackedArray)
-            {
-                foreach (var slot in value.Slots!)
-                {
-                    yield return slot;
-                }
-            }
-            else if (value.Type.IsArray)
-            {
-                foreach (var element in value.Elements!)
-                {
-                    foreach (var leaf in StructLeaves(element))
-                    {
-                        yield return leaf;
-                    }
-                }
-            }
-            else if (value.Type.IsStruct && value.Type.PointerDepth == 0 && value.Type.Members != null)
-            {
-                foreach (var member in value.Type.Members)
-                {
-                    foreach (var leaf in StructLeaves(value.Members![member.Name]))
-                    {
-                        yield return leaf;
-                    }
-                }
-            }
-            else
-            {
-                yield return value;
-            }
-        }
-
         internal VarRef MakePointer(VarRef lval, SourceRef sourceRef)
         {
             if (lval.Type.IsArray)

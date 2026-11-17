@@ -808,35 +808,36 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
-        public void StructParameterIsPoppedIntoMemberSlots()
+        public void StructParameterIsCopiedByMemcpy()
         {
             var s = Compile("struct P { int x; int y; }; int f(int k, struct P p) { return p.y; }");
-            // k, p.x, p.y are consecutive sp slots, popped in order
-            Assert.Contains("f: ; func f\n pop.sp 0\n pop.sp 4\n pop.sp 8\n", s);
+            // k is popped; the address of the caller's struct is popped by memcpy.sp into the slots of p
+            Assert.Contains("f: ; func f\n pop.sp 0\n memcpy.sp 8, 4 ; p\n", s);
             Assert.Contains(" push.d.sp 8 ; p.y\n", s);
         }
 
         [Fact]
-        public void StructArgumentIsPushedLastSlotFirst()
+        public void StructArgumentIsPushedAsItsAddress()
         {
             var s = Compile("struct P { int x; int y; }; int g(int k, struct P p) { return k; } void f() { struct P a; g(5, a); }");
-            // last argument first, and inside a struct the last slot first, so the callee pops them in order
-            Assert.Contains(" push.d.sp 4 ; a.y\n push.d.sp 0 ; a.x\n push 5\n jal ", s);
+            // last argument first; a struct is passed as its address
+            Assert.Contains(" push.sp 0 ; &a\n push 5\n jal ", s);
         }
 
         [Fact]
-        public void NestedStructArgumentIsFlattened()
+        public void NestedStructArgumentIsItsAddress()
         {
             var s = Compile("struct P { int x; int y; }; struct L { struct P a; int t; }; void g(struct L l) { } void f(struct L l) { g(l); }");
-            Assert.Contains(" push.d.sp 8 ; l.t\n push.d.sp 4 ; l.a.y\n push.d.sp 0 ; l.a.x\n jal ", s);
+            Assert.Contains(" push.sp 0 ; &l\n jal ", s);
+            Assert.Contains("g: ; func g\n memcpy.sp 12, 0 ; l\n", s);
         }
 
         [Fact]
         public void StructArgumentThroughPointer()
         {
             var s = Compile("struct P { int x; int y; }; void g(struct P p) { } void f(struct P *q) { g(*q); }");
-            Assert.Contains("push.d.pop 4", s);
-            Assert.Contains("push.d.pop 0", s);
+            // the pointer itself is the address of the struct
+            Assert.Contains(" push.d.sp 0 ; q\n jal ", s);
         }
 
         [Theory]
@@ -896,7 +897,8 @@ namespace OpenKh.Tests.kh2
         public void StructResultMemberAndArgumentAreCopiedFirst()
         {
             var s = Compile("struct P { int x; int y; }; struct P g() { struct P r; return r; } int h(struct P p) { return p.x; } int f() { return h(g()) + g().y; }");
-            Assert.Contains("jal 4, g\n memcpy.sp 8, 0 ; g()\n push.d.sp 4 ; g().y\n push.d.sp 0 ; g().x\n jal ", s);
+            // the returned struct is copied out of the dead frame before the call that would overwrite it; its address is the argument
+            Assert.Contains("jal 4, g\n memcpy.sp 8, 0 ; g()\n push.sp 0 ; &g()\n jal 4, h\n", s);
         }
 
         [Theory]
@@ -1070,7 +1072,7 @@ namespace OpenKh.Tests.kh2
         public void ArrayMemberIsPassedByValueWithTheStruct()
         {
             var s = Compile("struct B { int v[2]; }; void g(struct B b) { } void f() { struct B a; g(a); }");
-            Assert.Contains(" push.d.sp 4 ; a.v.1\n push.d.sp 0 ; a.v.0\n jal ", s);
+            Assert.Contains(" push.sp 0 ; &a\n jal ", s);
         }
 
         [Theory]

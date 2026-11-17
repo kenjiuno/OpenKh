@@ -1448,8 +1448,9 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var paramIsStruct = paramType != null && paramType.IsStruct && paramType.PointerDepth == 0;
                 if (argIsStruct || paramIsStruct)
                 {
-                    // struct by value: every member slot is pushed, last slot first, so that the callee's
-                    // `pop.sp 0, 4, ...` restores the slots in order (same as for scalar arguments).
+                    // struct by value: the address of the struct is pushed like any other argument, and the callee
+                    // copies the struct into its own frame with one `memcpy.sp` (see the prologue). The struct is copied
+                    // before the jal's frame is built, so the callee has its own copy.
                     if (!argIsStruct || !paramIsStruct || arg.Type.BaseName != paramType!.BaseName)
                     {
                         throw new CompilerException(
@@ -1458,10 +1459,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         );
                     }
                     lines.Add(arg.Prelude); // the argument is the result of a call returning a struct
-                    foreach (var leaf in CHelper.StructLeaves(arg).Reverse())
-                    {
-                        lines.Add(leaf.Getter ?? throw new CompilerException(GetSourceRef(args[x]), "Argument member has no getter"));
-                    }
+                    lines.Add(arg.GetPointer ?? throw new CompilerException(GetSourceRef(args[x]), "Argument struct has no address"));
                     continue;
                 }
 

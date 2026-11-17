@@ -328,6 +328,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             var argDict = new Dictionary<string, VarRef>();
 
+            // how the callee takes its arguments from tp, in order: a scalar is `pop.sp`, a struct is the address of
+            // the caller's struct, which `memcpy.sp` copies into the frame
+            var prologue = new List<string>();
+
             foreach (var argPair in argPairs)
             {
                 var spIndex = frame.Top;
@@ -335,7 +339,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                 if (argPair.Type.IsStruct && argPair.Type.PointerDepth == 0)
                 {
-                    // the caller pushed every member slot; they are popped to sp[spIndex...] below
+                    // the caller pushed its address; the prologue copies the struct to sp[spIndex...]
+                    prologue.Add($"memcpy.sp {argPair.Type.Size}, {4 * spIndex} ; {argPair.Name}");
                     argDict[argPair.Name] = StructVar.Build(
                         argPair.Type,
                         4 * spIndex,
@@ -355,6 +360,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     GetPointer: $"push.sp {4 * spIndex} ; &{argPair.Name}"
                 );
 
+                prologue.Add($"pop.sp {4 * spIndex}");
                 frame.Allocate((size == 0) ? 4 : (size + 3) / 4);
             }
 
@@ -370,9 +376,9 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             {
                 codeSeg.WriteLine($"{funcName}: ; func {funcName}");
 
-                for (int x = 0; x < numArgItemsUsed; x++)
+                foreach (var line in prologue)
                 {
-                    codeSeg.WriteLine($"pop.sp {4 * x}");
+                    codeSeg.WriteLine(line);
                 }
 
                 int labelIndex = 0;

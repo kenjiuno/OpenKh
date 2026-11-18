@@ -9,7 +9,9 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 {
     internal record ParameterDeclarationToNameAndTypePairVisitor(
         Func<CPP14Parser.DeclSpecifierSeqContext, TypeDescAndStorage> ReduceTypeDesc2,
-        Func<Antlr4.Runtime.ParserRuleContext, SourceRef> GetSourceRef)
+        Func<Antlr4.Runtime.ParserRuleContext, SourceRef> GetSourceRef,
+        ReduceTypeDesc? Types = null,
+        Func<string, VarRef?>? GetVar = null)
     {
         internal ArgPair Reduce(CPP14Parser.ParameterDeclarationContext parameterDeclaration)
         {
@@ -99,7 +101,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 {
                     // `a[3]`, `a[2][3]`, `a[]`: the last bracket is the innermost element type
                     var length = noPointerDeclarator.constantExpression() is { } constantExpression
-                        ? ConstEval.EvaluateArrayLength(constantExpression, GetSourceRef)
+                        ? ConstEval.EvaluateArrayLength(constantExpression, GetSourceRef, Types, GetVar)
                         : -1;
                     baseType = ArrayTypes.Make(baseType, length, GetSourceRef(noPointerDeclarator));
                 }

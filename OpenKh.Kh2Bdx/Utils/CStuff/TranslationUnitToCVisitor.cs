@@ -294,7 +294,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             var parameterDeclarationToNameAndTypePairVisitor = new ParameterDeclarationToNameAndTypePairVisitor(
                 ReduceTypeDesc1.Reduce,
-                GetSourceRef
+                GetSourceRef,
+                ReduceTypeDesc1
             );
 
             var retPair = parameterDeclarationToNameAndTypePairVisitor.ReduceDeclarator(

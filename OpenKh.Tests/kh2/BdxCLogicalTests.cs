@@ -1075,6 +1075,37 @@ namespace OpenKh.Tests.kh2
             Assert.Contains(" push.sp 0 ; &a\n jal ", s);
         }
 
+        [Fact]
+        public void SizeofOfAStructGivesAnArrayLength()
+        {
+            var s = Compile("struct P { int x; int y; }; void f() { int a[sizeof(struct P) / 4]; int n; n = 1; }");
+            // a has 2 elements
+            Assert.Contains(" pop.sp 8 ; n\n", s);
+            Assert.ThrowsAny<Exception>(() => Compile("struct P { int x; int y; }; void f() { int a[sizeof(struct P) / 4]; a[2] = 1; }"));
+        }
+
+        [Fact]
+        public void SizeofOfAVariableGivesAnArrayLength()
+        {
+            var s = Compile("int base[5]; int copy[sizeof(base) / sizeof(base[0])]; void f() { copy[4] = 1; }");
+            Assert.Contains("copy.4:\n", s);
+            Assert.ThrowsAny<Exception>(() => Compile("int base[5]; int copy[sizeof(base) / sizeof(base[0])]; void f() { copy[5] = 1; }"));
+        }
+
+        [Fact]
+        public void SizeofOfAStructGivesTheLengthOfAMemberArray()
+        {
+            var s = Compile("struct P { int x; int y; }; struct Q { int v[sizeof(struct P)]; }; void f() { struct Q q; int n; q.v[7] = 1; n = 1; }");
+            Assert.Contains(" pop.sp 32 ; n\n", s);
+        }
+
+        [Fact]
+        public void AVariableIsNotAConstantInAnArrayLength()
+        {
+            Assert.ThrowsAny<Exception>(() => Compile("int n; void f() { int a[n]; }"));
+            Assert.ThrowsAny<Exception>(() => Compile("int n; void f() { int a[sizeof(n) + n]; }"));
+        }
+
         [Theory]
         [InlineData("void f() { int a[0]; }")]
         [InlineData("void f() { int a[-1]; }")]

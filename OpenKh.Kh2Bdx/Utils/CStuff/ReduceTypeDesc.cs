@@ -216,7 +216,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         while (arrayDeclarator?.LeftBracket() != null && arrayDeclarator.noPointerDeclarator() is { } innerDeclarator)
                         {
                             var length = arrayDeclarator.constantExpression() is { } constantExpression
-                                ? ConstEval.EvaluateArrayLength(constantExpression, GetSourceRef)
+                                ? ConstEval.EvaluateArrayLength(constantExpression, GetSourceRef, this)
                                 : throw new CompilerException(GetSourceRef(declarator), "Array member needs a length");
                             memberType = ArrayTypes.Make(memberType, length, GetSourceRef(declarator));
                             arrayDeclarator = innerDeclarator;

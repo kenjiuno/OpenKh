@@ -10,17 +10,21 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
     /// </summary>
     internal static class ConstEval
     {
+        /// <param name="types">the struct types known where the expression is (`sizeof(struct P)`)</param>
+        /// <param name="getVar">the variables known there (`sizeof(x)`); they are never constants themselves</param>
         internal static int Evaluate(
             CPP14Parser.ConstantExpressionContext constantExpression,
-            Func<Antlr4.Runtime.ParserRuleContext, SourceRef> getSourceRef)
+            Func<Antlr4.Runtime.ParserRuleContext, SourceRef> getSourceRef,
+            ReduceTypeDesc? types = null,
+            Func<string, VarRef?>? getVar = null)
         {
             var cHelper = new CHelper(
-                GetVar: name => throw new CompilerException(getSourceRef(constantExpression), $"'{name}' is not a constant"),
+                GetVar: name => getVar?.Invoke(name) ?? throw new CompilerException(getSourceRef(constantExpression), $"'{name}' is not a constant"),
                 DeclareVar: (_, sourceRef) => throw new CompilerException(sourceRef, "Not a constant expression"),
                 DeclareStaticVar: (_, sourceRef) => throw new CompilerException(sourceRef, "Not a constant expression"),
                 AllocateStackItems: _ => throw new CompilerException(getSourceRef(constantExpression), "Not a constant expression")
             );
-            var value = new ExpressionToVarRefVisitor(getSourceRef, cHelper, new ReduceTypeDesc(getSourceRef))
+            var value = new ExpressionToVarRefVisitor(getSourceRef, cHelper, types ?? new ReduceTypeDesc(getSourceRef))
                 .VisitConstantExpression(constantExpression);
 
             if (value.Getter == null || !TryEvaluateCode(value.Getter, out var result))
@@ -33,9 +37,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// <summary>The length in `a[N]`: a constant that is positive.</summary>
         internal static int EvaluateArrayLength(
             CPP14Parser.ConstantExpressionContext constantExpression,
-            Func<Antlr4.Runtime.ParserRuleContext, SourceRef> getSourceRef)
+            Func<Antlr4.Runtime.ParserRuleContext, SourceRef> getSourceRef,
+            ReduceTypeDesc? types = null,
+            Func<string, VarRef?>? getVar = null)
         {
-            var length = Evaluate(constantExpression, getSourceRef);
+            var length = Evaluate(constantExpression, getSourceRef, types, getVar);
             if (length <= 0)
             {
                 throw new CompilerException(getSourceRef(constantExpression), "Array length must be positive");

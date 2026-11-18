@@ -80,7 +80,9 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             {
                 var parameterDeclarationToNameAndTypePairVisitor = new ParameterDeclarationToNameAndTypePairVisitor(
                     ReduceTypeDesc2,
-                    GetSourceRef
+                    GetSourceRef,
+                    ExpressionToVarRefVisitor.ReduceTypeDesc1,
+                    CHelper.GetVar
                 );
 
                 foreach (var initDeclarator in initDeclarators)

@@ -16,8 +16,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         Func<string, FuncSig?>? GetFunc = null,
         Func<byte[], string>? AddStringLiteral = null,
         FrameState? Frame = null,
-        Func<Func<string, string>>? NextUniqueLabelGenerator = null,
-        FunctionPointers? FuncPtrs = null
+        Func<Func<string, string>>? NextUniqueLabelGenerator = null
         )
     {
         /// <summary>

@@ -101,7 +101,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             Math: LLMath.FloatVer
             );
 
-        /// <summary>A pointer to a function. Its value is the number of the function, see <see cref="FunctionPointers"/>.</summary>
+        /// <summary>
+        /// A pointer to a function. Its value is the address of its code (pc), the value that the host takes to start a
+        /// thread (`trap_obj_thread_start`). It is made, kept, passed and compared, but not called: bdscript cannot jump to
+        /// an address in a variable.
+        /// </summary>
         public static TypeDesc FunctionPointer(FuncType function) => new TypeDesc(
             BaseName: function.Display,
             Size: 4,

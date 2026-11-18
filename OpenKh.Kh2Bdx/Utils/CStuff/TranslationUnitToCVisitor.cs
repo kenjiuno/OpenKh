@@ -10,7 +10,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 {
     internal record TranslationUnitToCVisitor(
         Func<ParserRuleContext, SourceRef> GetSourceRef,
-        ReduceTypeDesc ReduceTypeDesc1)
+        ReduceTypeDesc ReduceTypeDesc1,
+        IReadOnlyList<SyscallPragma>? SyscallPragmas = null)
     {
         internal record Result(
             TextWriter CodeSeg,
@@ -55,6 +56,36 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     )
                 );
             }
+            // `#pragma defsyscall`: traps that are not in the table, or another number for one that is (with `override`)
+            var pendingPrototypes = new Dictionary<string, SyscallPragma>();
+            var definedByPragma = new Dictionary<string, SyscallPragma>();
+            foreach (var pragma in SyscallPragmas ?? Array.Empty<SyscallPragma>())
+            {
+                if (funcDict.TryGetValue(pragma.Name, out var known) && known.Syscall is { } bound)
+                {
+                    if (bound == (pragma.Table, pragma.Index))
+                    {
+                        continue;
+                    }
+                    if (!pragma.Override)
+                    {
+                        throw new CompilerException(
+                            pragma.Position,
+                            $"'{pragma.Name}' is the trap {bound.Table}, {bound.Index}: add `override` to make it {pragma.Table}, {pragma.Index}"
+                        );
+                    }
+                    funcDict[pragma.Name] = known with { Syscall = (pragma.Table, pragma.Index) };
+                    definedByPragma[pragma.Name] = pragma;
+                }
+                else
+                {
+                    // the number of arguments and whether it returns come from the prototype
+                    funcDict[pragma.Name] = new FuncSig(pragma.Name, TypeDesc.Void, null, 0, (pragma.Table, pragma.Index));
+                    pendingPrototypes[pragma.Name] = pragma;
+                    definedByPragma[pragma.Name] = pragma;
+                }
+            }
+
             foreach (var declaration in declarationseq.declaration())
             {
                 // struct definitions must be known before signatures that use them
@@ -66,11 +97,26 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     // and so must typedef names
                     new ParameterDeclarationToNameAndTypePairVisitor(ReduceTypeDesc1.Reduce, GetSourceRef, ReduceTypeDesc1)
                         .TryDeclareTypedefs(simpleDeclaration);
+
+                    // and the prototypes of the traps: they give the types of the arguments and of the result
+                    foreach (var initDeclarator in simpleDeclaration.initDeclaratorList()?.initDeclarator() ?? Array.Empty<CPP14Parser.InitDeclaratorContext>())
+                    {
+                        if (initDeclarator.declarator() is { } prototype
+                            && ParameterDeclarationToNameAndTypePairVisitor.IsFunctionDeclarator(prototype)
+                            && !ReduceTypeDesc1.Reduce(specs).Typedef)
+                        {
+                            DeclareSyscallPrototype(prototype, ReduceTypeDesc1.Reduce(specs).TypeDesc, funcDict, pendingPrototypes);
+                        }
+                    }
                 }
 
                 if (declaration.functionDefinition() is var fd && fd != null && fd.functionBody() != null)
                 {
                     var (name, retType, argPairs) = GetSignature(fd);
+                    if (definedByPragma.TryGetValue(name, out var taken))
+                    {
+                        throw new CompilerException(GetSourceRef(fd), $"'{name}' is the trap {taken.Table}, {taken.Index} (#pragma defsyscall): it cannot be defined");
+                    }
                     funcDict[name] = new FuncSig(
                         Name: name,
                         RetType: retType,
@@ -80,9 +126,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 }
             }
 
-            var functionPointers = new FunctionPointers();
+            foreach (var missing in pendingPrototypes.Values)
+            {
+                throw new CompilerException(
+                    missing.Position,
+                    $"'{missing.Name}' needs a prototype: #pragma defsyscall gives the number of the trap, the prototype its arguments and its result"
+                );
+            }
+
             var cHelper = new CHelper(
-                FuncPtrs: functionPointers,
                 GetFunc: name => funcDict.TryGetValue(name, out var sig) ? sig : null,
                 AddStringLiteral: bytes =>
                 {
@@ -196,9 +248,6 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 }
             }
 
-            // the stubs of calls through function pointers: after every function that can be called is known
-            functionPointers.WriteStubs(codeSeg);
-
             return new Result(
                 CodeSeg: codeSeg,
                 InitCodeSeg: initCodeSeg,
@@ -281,6 +330,53 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             {
                 writer.WriteLine($" {reserve}");
             }
+        }
+
+        /// <summary>
+        /// The prototype of a trap gives the types of its arguments and of its result. The number of arguments and whether it
+        /// returns must be those of the trap table (they come from the engine; docs are not always right).
+        /// A prototype of anything else is ignored.
+        /// </summary>
+        private void DeclareSyscallPrototype(
+            CPP14Parser.DeclaratorContext prototype,
+            TypeDesc baseType,
+            Dictionary<string, FuncSig> funcDict,
+            Dictionary<string, SyscallPragma> pendingPrototypes)
+        {
+            var (name, ret, parameters) = new ParameterDeclarationToNameAndTypePairVisitor(ReduceTypeDesc1.Reduce, GetSourceRef, ReduceTypeDesc1)
+                .ReducePrototype(prototype, baseType);
+
+            if (!funcDict.TryGetValue(name, out var sig) || sig.Syscall == null)
+            {
+                return;
+            }
+
+            static bool IsStructValue(TypeDesc t) => t.IsStruct && t.PointerDepth == 0;
+            if (IsStructValue(ret) || parameters.Any(IsStructValue))
+            {
+                throw new CompilerException(GetSourceRef(prototype), $"A trap cannot take or return a struct by value ('{name}'): use a pointer");
+            }
+
+            if (!pendingPrototypes.ContainsKey(name))
+            {
+                if (parameters.Count != sig.NumIns)
+                {
+                    throw new CompilerException(
+                        GetSourceRef(prototype),
+                        $"'{name}' takes {sig.NumIns} argument(s) in the trap table, but the prototype has {parameters.Count}"
+                    );
+                }
+                if ((ret != TypeDesc.Void) != (sig.RetType != TypeDesc.Void))
+                {
+                    throw new CompilerException(
+                        GetSourceRef(prototype),
+                        $"'{name}' {(sig.RetType != TypeDesc.Void ? "returns a value" : "does not return a value")} in the trap table, but the prototype says the opposite"
+                    );
+                }
+            }
+
+            funcDict[name] = sig with { RetType = ret, ParamTypes = parameters.ToArray(), NumIns = parameters.Count };
+            pendingPrototypes.Remove(name);
         }
 
         private (string Name, TypeDesc RetType, ArgPair[] Args) GetSignature(
@@ -520,8 +616,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 GetFunc: parent.GetFunc,
                 AddStringLiteral: parent.AddStringLiteral,
                 Frame: parent.Frame,
-                NextUniqueLabelGenerator: parent.NextUniqueLabelGenerator,
-                FuncPtrs: parent.FuncPtrs
+                NextUniqueLabelGenerator: parent.NextUniqueLabelGenerator
             );
         }
 

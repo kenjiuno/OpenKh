@@ -102,7 +102,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         }
 
         /// <summary>Is a block comment still open at the end of the line? (the text of strings is not looked into)</summary>
-        private static bool TrackBlockComment(string line, bool inComment)
+        internal static bool TrackBlockComment(string line, bool inComment)
         {
             for (int x = 0; x < line.Length; x++)
             {

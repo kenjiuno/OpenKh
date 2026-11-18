@@ -56,7 +56,7 @@ namespace OpenKh.Command.Bdxio.Commands
         {
             return new CPreprocessorOptions
             {
-                IncludeProvider = new DirectoryIncludeProvider(includeDirectories),
+                IncludeProvider = new BuiltInIncludeProvider(new DirectoryIncludeProvider(includeDirectories)),
                 Defines = defines
                     .Select(
                         it =>

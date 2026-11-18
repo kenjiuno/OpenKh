@@ -1435,7 +1435,6 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             string funcName;
             FuncSig sig;
-            VarRef? functionPointer = null;
             if (directName != null && CHelper.GetVar(directName) == null)
             {
                 funcName = directName;
@@ -1444,14 +1443,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
             else
             {
-                // a call through a function pointer: `fp(1)`, `(*fp)(1)`, `s.cb(1)`, `table[i](1)`
-                functionPointer = VisitPostfixExpression(callee);
-                if (functionPointer.Type.Function is not { } functionType || functionPointer.Type.PointerDepth != 1 || functionPointer.Getter == null)
-                {
-                    throw new CompilerException(GetSourceRef(callee), "Only functions and function pointers can be called");
-                }
-                funcName = "(*fp)";
-                sig = new FuncSig(funcName, functionType.Ret, functionType.Params.ToArray(), functionType.Params.Count);
+                // `fp(1)`, `(*fp)(1)`, `s.cb(1)`: a function pointer holds the address of the code (pc) and bdscript cannot jump to an
+                // address in a variable. The host calls it: pass it to `trap_obj_thread_start`.
+                var target = VisitPostfixExpression(callee);
+                throw new CompilerException(
+                    GetSourceRef(callee),
+                    target.Type.Function != null
+                        ? "A function pointer cannot be called: its value is the address of the code (pc), for `trap_obj_thread_start` and the like"
+                        : "Only functions can be called"
+                );
             }
 
             var args = postfixExpression.expressionList()?.initializerList()?.initializerClause()
@@ -1518,15 +1518,6 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             if (sig.Syscall is var (table, index))
             {
                 lines.Add($"syscall {table}, {index} ; {funcName}");
-            }
-            else if (functionPointer != null)
-            {
-                // the number of the function is pushed last, so that the stub pops it and the callee gets the arguments
-                var functionKey = functionPointer.Type.Function!.Key;
-                var stub = (CHelper.FuncPtrs ?? throw new CompilerException(GetSourceRef(callee), "Function pointers are not available here"))
-                    .StubFor(functionKey);
-                lines.Add(functionPointer.Getter);
-                lines.Add($"jal {CHelper.NextJalFrameSize()}, {stub} ; {functionKey}");
             }
             else
             {
@@ -1718,14 +1709,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     return new VarRef(Type: TypeDesc.Int32, Getter: $"push {enumerator}");
                 }
                 if (var0 is null
-                    && CHelper.FuncPtrs != null
                     && CHelper.GetFunc?.Invoke(varName) is { Syscall: null, ParamTypes: not null } function)
                 {
-                    // a function name as a value is the number of the function (see FunctionPointers)
-                    var functionType = new FuncType(function.RetType, function.ParamTypes);
+                    // a function name as a value is the address of its code (pc), which is what the host takes to start a thread
+                    // (`trap_obj_thread_start`): the label of the function
                     return new VarRef(
-                        Type: TypeDesc.FunctionPointer(functionType),
-                        Getter: $"push {CHelper.FuncPtrs.IndexOf(function.Name, functionType.Key)} ; &{varName}"
+                        Type: TypeDesc.FunctionPointer(new FuncType(function.RetType, function.ParamTypes)),
+                        Getter: $"push {function.Name}"
                     );
                 }
                 if (var0 is null)

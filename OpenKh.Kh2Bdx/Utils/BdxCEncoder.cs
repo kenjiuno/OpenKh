@@ -36,7 +36,8 @@ namespace OpenKh.Kh2Bdx.Utils
             //TODO #pragma defsyscall trap_puti 0 0
 
             // the preprocessor runs first (unless it is disabled); its line markers give the errors the lines of the original files
-            var preprocessorOptions = preprocessor ?? new CPreprocessorOptions();
+            var preprocessorOptions = (preprocessor ?? new CPreprocessorOptions()) with { };
+            preprocessorOptions.IncludeProvider = new BuiltInIncludeProvider(preprocessorOptions.IncludeProvider);
             if (preprocessorOptions.Enabled)
             {
                 script = new CPreprocessor(preprocessorOptions).Process(script, scriptName);
@@ -45,7 +46,9 @@ namespace OpenKh.Kh2Bdx.Utils
             var stream = FromString(script, scriptName);
 
             // the line markers a preprocessor leaves (`#line 12 "file.c"`) say where the errors are to be reported
-            LineMap.Attach(stream, LineMap.Parse(script, scriptName));
+            var lineMap = LineMap.Parse(script, scriptName);
+            LineMap.Attach(stream, lineMap);
+            var syscallPragmas = SyscallPragmas.Parse(script, lineMap);
             var lexer = new CPP14Lexer(
                 input: stream, 
                 output: output ?? TextWriter.Null, 
@@ -61,7 +64,8 @@ namespace OpenKh.Kh2Bdx.Utils
 
             var result = new TranslationUnitToCVisitor(
                 GetSourceRef,
-                new ReduceTypeDesc(GetSourceRef)
+                new ReduceTypeDesc(GetSourceRef),
+                syscallPragmas
             )
                 .Visit(root);
 

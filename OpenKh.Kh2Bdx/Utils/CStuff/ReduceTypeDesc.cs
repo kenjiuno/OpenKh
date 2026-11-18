@@ -11,7 +11,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
     {
         internal TypeDescAndStorage Reduce(CPP14Parser.DeclSpecifierSeqContext declSpecifierSeq)
         {
-            var declSpecifiers = declSpecifierSeq.declSpecifier().AsSpan();
+            // `const` and `volatile` change nothing here (the memory is the host's and nothing is read-only)
+            var declSpecifiers = declSpecifierSeq.declSpecifier()
+                .Where(it => it.typeSpecifier()?.trailingTypeSpecifier()?.cvQualifier() == null)
+                .ToArray()
+                .AsSpan();
             var isStatic = false;
             var isTypedef = false;
             while (true)

@@ -116,6 +116,20 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             throw new CompilerException(GetSourceRef(pointerDeclarator), "Unsupported pointer declarator");
         }
 
+        /// <summary>Is the declarator `name(...)`, a function, and not a variable (or a pointer to a function)?</summary>
+        internal static bool IsFunctionDeclarator(CPP14Parser.DeclaratorContext declarator) =>
+            declarator.pointerDeclarator()?.noPointerDeclarator() is { } top
+            && top.parametersAndQualifiers() != null
+            && top.noPointerDeclarator()?.declaratorid() != null;
+
+        /// <summary>The name, the type of the result and the types of the parameters of `int *f(int a, char *b)`.</summary>
+        internal (string Name, TypeDesc Ret, List<TypeDesc> Params) ReducePrototype(CPP14Parser.DeclaratorContext declarator, TypeDesc baseType)
+        {
+            var pair = ReduceDeclarator(declarator, baseType);
+            var parametersAndQualifiers = declarator.pointerDeclarator()!.noPointerDeclarator()!.parametersAndQualifiers()!;
+            return (pair.Name, pair.Type, ParamTypesOf(parametersAndQualifiers));
+        }
+
         /// <summary>The parameter types of `(int, char *)` or `(int a, int b)`; `(void)` and `()` are none.</summary>
         private List<TypeDesc> ParamTypesOf(CPP14Parser.ParametersAndQualifiersContext parametersAndQualifiers)
         {

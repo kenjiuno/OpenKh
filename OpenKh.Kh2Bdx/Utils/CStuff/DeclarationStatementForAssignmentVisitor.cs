@@ -99,6 +99,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                 foreach (var initDeclarator in initDeclarators)
                 {
+                    if (varTypePair != null
+                        && initDeclarator.declarator() is { } maybePrototype
+                        && ParameterDeclarationToNameAndTypePairVisitor.IsFunctionDeclarator(maybePrototype))
+                    {
+                        // a prototype `int f(int);` declares a function (traps are typed by it), not a variable
+                        continue;
+                    }
+
                     VarRef? assignTo = null;
 
                     if (initDeclarator.declarator() is var declarator

@@ -1268,32 +1268,33 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
-        public void FunctionNameAsAValueIsItsNumber()
+        public void FunctionNameAsAValueIsItsCodeAddress()
         {
             var s = Compile("int a(int x) { return x; } int b(int x) { return x; } int f() { int (*p)(int) = b; p = a; p = &a; return 0; }");
-            // numbered in the order their address is first taken: b is 1, a is 2
-            Assert.Contains(" push 1 ; &b\n", s);
-            Assert.Contains(" push 2 ; &a\n", s);
+            // the label of the function: the pc that the host takes (trap_obj_thread_start)
+            Assert.Contains(" push b\n", s);
+            Assert.Equal(2, s.Split(" push a\n").Length - 1);
         }
 
         [Fact]
-        public void CallThroughAFunctionPointerPushesTheNumberLastAndJalsToTheStub()
-        {
-            var s = Compile("int a(int x, int y) { return x; } int f(int (*p)(int, int)) { return p(1, 2); }");
-            Assert.Contains(" push 2\n push 1\n push.d.sp 0 ; p\n jal 4, __icall1 ; signed int(signed int,signed int)\n", s);
-        }
-
-        [Fact]
-        public void StubDispatchesOverTheFunctionsOfTheSameType()
+        public void FunctionPointerCanBeKeptPassedAndComparedButNotCalled()
         {
             var s = Compile(
-                "int a(int x) { return x; } int b(int x) { return x; } int c(int x, int y) { return x; } int d(int x) { return x; }" +
-                "int f() { int (*p)(int) = a; p = b; int (*q)(int, int) = c; return p(1) + q(1, 2); }"
+                "void one(int a) { } void (*gp)(int) = one; void use(void (*fn)(int)) { } " +
+                "int f(void (*p)(int)) { use(p); use(one); return p == one || p != 0; }"
             );
-            // p's type: a and b (numbered 1 and 2), not c (3) and not d (never taken)
-            Assert.Contains("__icall1: ; call through a function pointer signed int(signed int)\n pop.sp 0 ; function number\n push.d.sp 0\n push 1\n sub\n bnez __icall1_1\n jal 4, a\n ret\n__icall1_1:\n push.d.sp 0\n push 2\n sub\n bnez __icall1_2\n jal 4, b\n ret\n__icall1_2:\n halt\n", s);
-            Assert.Contains("jal 4, c\n", s);
-            Assert.DoesNotContain("jal 4, d\n", s);
+            Assert.Contains("_initc:\n push one\n pop.wp gp\n ret\n", s);
+            Assert.Contains(" push one\n jal ", s);
+        }
+
+        [Theory]
+        [InlineData("int a(int x) { return x; } int f(int (*p)(int)) { return p(1); }")]
+        [InlineData("int a(int x) { return x; } int f(int (*p)(int)) { return (*p)(1); }")]
+        [InlineData("struct S { int (*cb)(int); }; int f(struct S *s) { return s->cb(1); }")]
+        public void CallingAFunctionPointerIsAnError(string code)
+        {
+            var message = Assert.ThrowsAny<Exception>(() => Compile(code)).Message;
+            Assert.Contains("A function pointer cannot be called", message);
         }
 
         [Fact]
@@ -1301,25 +1302,150 @@ namespace OpenKh.Tests.kh2
         {
             Compile(
                 "typedef int (*Fn)(int); struct S { Fn a; int (*b)(int, char *); void (*c)(void); }; Fn table[2]; int (*g)(int);" +
-                "int h(int (*cb)(int), Fn *pp) { return cb(1) + (*pp)(2); } Fn mk(int w) { return table[w]; } int (*arr[2])(int);"
+                "int h(int (*cb)(int), Fn *pp) { return cb == *pp; } Fn mk(int w) { return table[w]; } int (*arr[2])(int);"
             );
         }
 
         [Fact]
         public void ADereferencedFunctionPointerIsTheSameFunctionPointer()
         {
-            Compile("int f(int (*p)(int)) { return (*p)(1) + (**p)(2); }");
+            Compile("int f(int (*p)(int)) { return p == *p && *p == **p; }");
         }
 
         [Theory]
         [InlineData("int a(int x) { return x; } int f() { int (*p)(int, int) = a; return 0; }")]
         [InlineData("int a(int x) { return x; } int f() { char (*p)(int) = a; return 0; }")]
-        [InlineData("int a(int x) { return x; } int f() { int (*p)(int) = a; return p(1, 2); }")]
         [InlineData("int f() { int n; return n(1); }")]
         [InlineData("int a(int x) { return x; } int f() { int (*p)(int) = a; return p[0]; }")]
         public void BadFunctionPointerUse(string code)
         {
             Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
+        public void PragmaDefsyscallBindsANameToATrapAndThePrototypeTypesIt()
+        {
+            var s = Compile(
+                "#pragma defsyscall my_new 3 17\n" +
+                "int my_new(float x, int y);\n" +
+                "int f() { return my_new(2, 3) + 1; }"
+            );
+            // the number is the pragma's; the argument 2 is a float by the prototype
+            Assert.Contains(" push 2\n cvt.w.s\n push 3\n syscall 3, 17 ; my_new\n", s);
+        }
+
+        [Fact]
+        public void APrototypeTypesATrapOfTheTableAndKeepsItsNumber()
+        {
+            var s = Compile("float trap_frametime(void); float f(float k) { return trap_frametime() * k; }");
+            Assert.Contains(" syscall 0, 3 ; trap_frametime\n push.d.sp 0 ; k\n mul.s\n", s);
+        }
+
+        [Fact]
+        public void PragmaForATrapOfTheTableWithTheSameNumberIsFine()
+        {
+            Compile("#pragma defsyscall trap_puti 0 0\nvoid f() { trap_puti(\"x\", 1); }");
+        }
+
+        [Fact]
+        public void PragmaWithAnotherNumberForATrapOfTheTableNeedsOverride()
+        {
+            Assert.Contains("add `override`", Assert.ThrowsAny<Exception>(() => Compile("#pragma defsyscall trap_puti 4 4\nvoid f() { }")).Message);
+            var s = Compile("#pragma defsyscall trap_puti 4 4 override\nvoid f() { trap_puti(\"x\", 1); }");
+            Assert.Contains("syscall 4, 4 ; trap_puti", s);
+        }
+
+        [Fact]
+        public void PragmaPositionIsReportedAtTheOriginalLine()
+        {
+            var message = Assert.ThrowsAny<Exception>(() => Compile("# 40 \"orig.h\"\n#pragma defsyscall x 0\n")).Message;
+            Assert.StartsWith("orig.h(40, 0): Invalid #pragma defsyscall", message);
+        }
+
+        [Theory]
+        [InlineData("#pragma defsyscall\n")]
+        [InlineData("#pragma defsyscall x\n")]
+        [InlineData("#pragma defsyscall x 0\n")]
+        [InlineData("#pragma defsyscall x a b\n")]
+        [InlineData("#pragma defsyscall 3x 0 0\n")]
+        [InlineData("#pragma defsyscall x -1 0\n")]
+        [InlineData("#pragma defsyscall x 1024 0\n")]
+        [InlineData("#pragma defsyscall x 0 65536\n")]
+        [InlineData("#pragma defsyscall x 0 0 force\n")]
+        [InlineData("#pragma defsyscall x 0 0 override extra\n")]
+        public void InvalidPragmaDefsyscall(string code)
+        {
+            Assert.Contains("Invalid #pragma defsyscall", Assert.ThrowsAny<Exception>(() => Compile(code + "void f() { }")).Message);
+        }
+
+        [Fact]
+        public void PragmaWithoutAPrototypeIsAnError()
+        {
+            Assert.Contains("needs a prototype", Assert.ThrowsAny<Exception>(() => Compile("#pragma defsyscall my_new 3 17\nvoid f() { }")).Message);
+        }
+
+        [Fact]
+        public void PragmaNameCannotBeDefinedAsAFunction()
+        {
+            var message = Assert.ThrowsAny<Exception>(() => Compile("#pragma defsyscall my_new 3 17\nint my_new(int a);\nint my_new(int a) { return a; }")).Message;
+            Assert.Contains("cannot be defined", message);
+        }
+
+        [Fact]
+        public void PragmaInACommentIsNotAPragma()
+        {
+            Compile("/*\n#pragma defsyscall oops\n*/\nvoid f() { }");
+        }
+
+        [Theory]
+        [InlineData("int trap_puti(const char *name, int value);", "does not return a value")]
+        [InlineData("void trap_frametime(void);", "returns a value")]
+        [InlineData("void trap_puti(const char *name);", "takes 2 argument(s) in the trap table, but the prototype has 1")]
+        [InlineData("void trap_puti(const char *name, int a, int b);", "takes 2 argument(s) in the trap table, but the prototype has 3")]
+        [InlineData("struct S { int a; }; struct S trap_frametime(void);", "struct by value")]
+        [InlineData("struct S { int a; }; void trap_puti(struct S s, int b);", "struct by value")]
+        public void PrototypeThatDiffersFromTheTrapTableIsAnError(string prototype, string expected)
+        {
+            Assert.Contains(expected, Assert.ThrowsAny<Exception>(() => Compile(prototype + "\nvoid f() { }")).Message);
+        }
+
+        [Fact]
+        public void PrototypeOfAFunctionOfTheSourceIsIgnoredAndDeclaresNoVariable()
+        {
+            var s = Compile("int helper(int a);\nint f() { return helper(1); }\nint helper(int a) { return a; }");
+            Assert.DoesNotContain("section .bss", s);
+            Assert.Contains("jal 4, helper", s);
+        }
+
+        [Fact]
+        public void BuiltInHeaderIsReadAndItsPrototypesMatchTheTrapTable()
+        {
+            var s = Compile(
+                "#include <kh2/traps.h>\n" +
+                "void f(struct FVector *v) { void *m = trap_memory_alloc(16); float t = trap_frametime(); trap_vector_normalize(v); trap_memory_free(m); }"
+            );
+            Assert.Contains("syscall 0, 47 ; trap_memory_alloc", s);
+            Assert.Contains("syscall 0, 7 ; trap_vector_normalize", s);
+        }
+
+        [Fact]
+        public void BuiltInHeaderCanBeReplacedByAnIncludeDirectory()
+        {
+            var s = CompileWith(
+                "#include <kh2/traps.h>\nint f() { return 42; }",
+                new Dictionary<string, string> { ["kh2/traps.h"] = "#define NOTHING_HERE 1\n" }
+            );
+            Assert.Contains("push 42", s);
+        }
+
+        [Fact]
+        public void ThreadStartTakesTheAddressOfTheCodeOfAFunction()
+        {
+            var s = Compile(
+                "#include <kh2/traps.h>\nvoid entry(int a) { }\nvoid f(void *obj) { trap_obj_thread_start(obj, 1, entry, 0, 5); }"
+            );
+            // obj, group, pc (the label), flag, arg: in this order
+            Assert.Contains(" push.d.sp 0 ; obj\n push 1\n push entry\n push 0\n push 5\n syscall 1, 82 ; trap_obj_thread_start\n", s);
         }
 
         [Fact]

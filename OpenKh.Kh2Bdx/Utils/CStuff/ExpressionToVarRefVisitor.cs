@@ -157,8 +157,30 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         throw new CompilerException(GetSourceRef(assignmentExpression), "Left value must have a getter for compound assignment");
                     }
 
+                    // an int variable with a float operand: the operation is done in float, then back to int
+                    var mixed = lval.Type.PointerDepth == 0 && !lval.Type.IsStruct && !lval.Type.IsArray && lval.Type.Math == LLMath.IntVer
+                        && rval.Type == TypeDesc.Float32
+                        && (assignmentOperator.PlusAssign() != null || assignmentOperator.MinusAssign() != null
+                            || assignmentOperator.StarAssign() != null || assignmentOperator.DivAssign() != null);
+
                     VarRef Apply(string opName, string? lines)
                     {
+                        if (mixed)
+                        {
+                            var floatLines = opName switch
+                            {
+                                "add" => TypeDesc.Float32.Math?.ApplyAdd,
+                                "sub" => TypeDesc.Float32.Math?.ApplySub,
+                                "mul" => TypeDesc.Float32.Math?.ApplyMul,
+                                _ => TypeDesc.Float32.Math?.ApplyDiv,
+                            };
+                            return Store(
+                                true,
+                                CHelper.JoinLines(CHelper.GetConverter(lval.Type, TypeDesc.Float32), rval.Getter),
+                                CHelper.JoinLines(floatLines, CHelper.GetConverter(TypeDesc.Float32, lval.Type))
+                            );
+                        }
+
                         if (lines == null)
                         {
                             throw new CompilerException(
@@ -623,6 +645,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             throw new CompilerException(GetSourceRef(relationalExpressions[1]), "Right value must have a getter");
                         }
 
+                        (lval, rval) = BalanceArithmetic(lval, rval);
                         var converter = CHelper.GetConverter(FromType: rval.Type, ToType: lval.Type)
                             ?? throw new CompilerException(GetSourceRef(relationalExpressions[1]), $"Cannot convert from {rval.Type.Display} to {lval.Type.Display}");
 
@@ -641,7 +664,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                                     sub,
                                     lines
                                 )
-                            );
+                            ) with { Type = TypeDesc.Int32 };
                         }
 
                         if (false)
@@ -660,6 +683,29 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
 
             throw new CompilerException(GetSourceRef(equalityExpression), "Unsupported equality expression");
+        }
+
+        /// <summary>
+        /// The usual arithmetic conversion of int and float: when one side is a float, the other side (an int) becomes a float too,
+        /// whichever side it is (`3 * 0.5` is 1.5, not `0`).
+        /// </summary>
+        private (VarRef Left, VarRef Right) BalanceArithmetic(VarRef left, VarRef right)
+        {
+            static bool IsInt(TypeDesc t) => t.PointerDepth == 0 && !t.IsStruct && !t.IsArray && t.Math == LLMath.IntVer;
+
+            VarRef ToFloat(VarRef value) => value.Getter == null || CHelper.GetConverter(value.Type, TypeDesc.Float32) is not { } converter
+                ? value
+                : new VarRef(Type: TypeDesc.Float32, Getter: CHelper.JoinLines(value.Getter, converter));
+
+            if (left.Type == TypeDesc.Float32 && IsInt(right.Type))
+            {
+                right = ToFloat(right);
+            }
+            else if (IsInt(left.Type) && right.Type == TypeDesc.Float32)
+            {
+                left = ToFloat(left);
+            }
+            return (left, right);
         }
 
         /// <summary>Integer promotion: char and short take part in arithmetic as int, so the other operand is not narrowed to them.</summary>
@@ -690,6 +736,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             throw new CompilerException(GetSourceRef(relationalExpression), "Right value must have a getter");
                         }
 
+                        (lval, rval) = BalanceArithmetic(lval, rval);
                         var converter = CHelper.GetConverter(FromType: rval.Type, ToType: lval.Type)
                             ?? throw new CompilerException(GetSourceRef(relationalExpression), $"Cannot convert from {rval.Type.Display} to {lval.Type.Display}");
 
@@ -709,7 +756,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                                     lval.Type.Math?.ApplySub,
                                     lines
                                 )
-                            );
+                            ) with { Type = TypeDesc.Int32 };
                         }
 
                         if (false)
@@ -850,6 +897,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             var opTree = (ITerminalNode)additiveExpression.GetChild(1 + 2 * x);
                             var opType = opTree.Symbol.Type;
 
+                        (lval, rval) = BalanceArithmetic(lval, rval);
                             var converter = CHelper.GetConverter(FromType: rval.Type, ToType: lval.Type)
                                 ?? throw new CompilerException(
                                     CHelper.GetSourceRefFromSymbol(opTree.Symbol),
@@ -944,6 +992,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             var opTree = (ITerminalNode)multiplicativeExpression.GetChild(1 + 2 * x);
                             var opType = opTree.Symbol.Type;
 
+                        (lval, rval) = BalanceArithmetic(lval, rval);
                             var converter = CHelper.GetConverter(FromType: rval.Type, ToType: lval.Type)
                                 ?? throw new CompilerException(
                                     CHelper.GetSourceRefFromSymbol(opTree.Symbol),

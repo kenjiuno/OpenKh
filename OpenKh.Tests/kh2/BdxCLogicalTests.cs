@@ -537,6 +537,29 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void IntTimesFloatIsDoneInFloat()
+        {
+            var s = Compile("float f(int a) { return a * 0.5; }");
+            Assert.Contains(" push.d.sp 0 ; a\n cvt.w.s\n push.s 0.5\n mul.s\n", s);
+        }
+
+        [Fact]
+        public void ComparisonResultIsInt()
+        {
+            var s = Compile("int f(float a, int b) { int r = (a < b); return r; }");
+            Assert.Contains("cvt.w.s", s);
+        }
+
+        [Fact]
+        public void IntCompoundAssignWithFloatIsDoneInFloat()
+        {
+            var s = Compile("void f() { int a = 1; a += 0.5; }");
+            Assert.Contains("cvt.w.s", s);
+            Assert.Contains("add.s", s);
+            Assert.Contains("cvt.s.w", s);
+        }
+
+        [Fact]
         public void ConditionalExpressionConvertsToTheCommonType()
         {
             var s = Compile("float f(int c, int a, float b) { return c ? a : b; }");

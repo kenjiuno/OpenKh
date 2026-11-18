@@ -858,6 +858,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return;
             }
 
+            if (expr.EffectOnly != null)
+            {
+                // an assignment or ++/-- whose value is not used
+                writeHelper.CodeSeg.WriteLine(expr.EffectOnly);
+                return;
+            }
+
             if (expr.DiscardCode != null)
             {
                 // unused struct result: the call leaves a pointer on tp, which is dropped

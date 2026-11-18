@@ -138,7 +138,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                                 CHelper.StoreTail(target)
                             )
                             : CHelper.JoinLines(compound ? lval.Getter : null, rvalCode, lines, "dup", lval.Setter),
-                        Setter: null
+                        Setter: null,
+                        // as a statement the value is not used: no `dup` here and no `drop` after
+                        EffectOnly: lval.Target == null
+                            ? CHelper.JoinLines(compound ? lval.Getter : null, rvalCode, lines, lval.Setter)
+                            : null
                     );
                 }
 
@@ -1245,7 +1249,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         Type: lval.Type,
                         Getter: lval.Target is { } target
                             ? CHelper.JoinLines(target.Address, "dup", target.Load, lines, converter, add, CHelper.StoreTail(target))
-                            : CHelper.JoinLines(lval.Getter, lines, converter, add, "dup", lval.Setter)
+                            : CHelper.JoinLines(lval.Getter, lines, converter, add, "dup", lval.Setter),
+                        EffectOnly: lval.Target == null
+                            ? CHelper.JoinLines(lval.Getter, lines, converter, add, lval.Setter)
+                            : null
                     );
                 }
 
@@ -1390,7 +1397,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                     return new VarRef(
                         Type: lval.Type,
-                        Getter: CHelper.JoinLines(lval.Getter, "dup", lines, converter, add, lval.Setter)
+                        Getter: CHelper.JoinLines(lval.Getter, "dup", lines, converter, add, lval.Setter),
+                        EffectOnly: CHelper.JoinLines(lval.Getter, lines, converter, add, lval.Setter)
                     );
                 }
 

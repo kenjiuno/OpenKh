@@ -242,6 +242,32 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void AssignmentStatementHasNoDupAndNoDrop()
+        {
+            var s = Compile("int g; void f(int a) { a = 1; g = a + 2; a += 3; a++; --a; }");
+            Assert.DoesNotContain("dup", s);
+            Assert.DoesNotContain("drop", s);
+            Assert.Contains(" push 1\n pop.sp 0 ; a\n", s);
+            Assert.Contains(" push.d.sp 0 ; a\n push 2\n add\n pop.wp g\n", s);
+            Assert.Contains(" push.d.sp 0 ; a\n push 3\n add\n pop.sp 0 ; a\n", s);
+        }
+
+        [Fact]
+        public void AssignmentThatIsUsedKeepsItsValue()
+        {
+            var s = Compile("int f(int a) { int b; b = (a = 1) + 1; return a++ + ++a; }");
+            Assert.Contains(" push 1\n dup\n pop.sp 0 ; a\n push 1\n add\n pop.sp 4 ; b\n", s);
+        }
+
+        [Fact]
+        public void ForLoopStepHasNoDrop()
+        {
+            var s = Compile("void f(int n) { int i; for (i = 0; i < n; i++) { } }");
+            Assert.DoesNotContain("drop", s);
+            Assert.DoesNotContain("dup", s);
+        }
+
+        [Fact]
         public void StructPointerThatIsNotTheFirstSlotIsReadThroughTheStack()
         {
             var s = Compile("struct V { int x; struct V *next; }; int f(int k, struct V *p) { return p->next->x; }");
@@ -252,10 +278,10 @@ namespace OpenKh.Tests.kh2
         public void MembersOfThePointerInTheFirstSlotUseSpD()
         {
             var s = Compile("struct V { int x; int y; struct V *next; }; void f(struct V *p, int k) { p->y = 3; p->x += k; int a = p->y; p->next = p; }");
-            Assert.Contains(" push 3\n dup\n pop.sp.d 4\n drop\n", s);
-            Assert.Contains(" push.d.sp.d 0\n push.d.sp 4 ; k\n add\n dup\n pop.sp.d 0\n drop\n", s);
+            Assert.Contains(" push 3\n pop.sp.d 4\n", s);
+            Assert.Contains(" push.d.sp.d 0\n push.d.sp 4 ; k\n add\n pop.sp.d 0\n", s);
             Assert.Contains(" push.d.sp.d 4\n pop.sp 8 ; a\n", s);
-            Assert.Contains(" push.d.sp 0 ; p\n dup\n pop.sp.d 8\n drop\n", s);
+            Assert.Contains(" push.d.sp 0 ; p\n pop.sp.d 8\n", s);
             Assert.DoesNotContain("memcpy", s);
         }
 
@@ -270,7 +296,7 @@ namespace OpenKh.Tests.kh2
         public void ThePointedValueOfThePointerInTheFirstSlotUsesSpD()
         {
             var s = Compile("int g(int *q) { *q = 5; return *q; }");
-            Assert.Contains(" push 5\n dup\n pop.sp.d 0\n drop\n", s);
+            Assert.Contains(" push 5\n pop.sp.d 0\n", s);
             Assert.Contains(" push.d.sp.d 0 ; deref\n", s);
         }
 
@@ -1017,7 +1043,7 @@ namespace OpenKh.Tests.kh2
         public void ConstantIndexOfLocalArrayIsItsSlot()
         {
             var s = Compile("void f() { int a[3]; a[1] = 5; }");
-            Assert.Contains(" push 5\n dup\n pop.sp 4 ; a.1\n drop\n", s);
+            Assert.Contains(" push 5\n pop.sp 4 ; a.1\n", s);
         }
 
         [Fact]
@@ -1520,7 +1546,8 @@ namespace OpenKh.Tests.kh2
         {
             var s = Compile("int f() { int a; int b; a = b = 3; return a; }");
             // b = 3 leaves the stored value (dup) for the outer assignment to consume
-            Assert.Contains(" push 3\n dup\n pop.sp 4 ; b\n dup\n pop.sp 0 ; a\n drop\n", s);
+            // (the outer assignment is a statement, so it has no dup and no drop)
+            Assert.Contains(" push 3\n dup\n pop.sp 4 ; b\n pop.sp 0 ; a\n", s);
         }
 
         [Fact(Skip = "Private usage")]

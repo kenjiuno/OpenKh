@@ -87,6 +87,116 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void HashMakesAStringOfTheArgumentAsItIsWritten()
+        {
+            var text = Run("#define STR(x) #x\nchar *a = STR(a  +  b); char *b = STR(  x  ); char *c = STR();\n");
+            Assert.Equal("\nchar *a = \"a + b\"; char *b = \"x\"; char *c = \"\";\n", text);
+        }
+
+        [Fact]
+        public void HashEscapesStringsAndCharactersInTheArgument()
+        {
+            var text = Run("#define STR(x) #x\nchar *a = STR(\"hi\\n\" 'c' '\\'');\n");
+            // "hi\n" 'c' '\''  becomes  "\"hi\\n\" 'c' '\\''"
+            Assert.Equal("\nchar *a = \"\\\"hi\\\\n\\\" 'c' '\\\\''\";\n", text);
+        }
+
+        [Fact]
+        public void HashDoesNotExpandTheArgumentButAMacroInBetweenDoes()
+        {
+            var text = Run("#define N 3\n#define STR(x) #x\n#define XSTR(x) STR(x)\nchar *a = STR(N); char *b = XSTR(N);\n");
+            Assert.Equal("\n\n\nchar *a = \"N\"; char *b = \"3\";\n", text);
+        }
+
+        [Fact]
+        public void HashIsAnOrdinaryTokenInAnObjectMacro()
+        {
+            Assert.Equal("\nint a = 1 # 2;\n", Run("#define H 1 # 2\nint a = H;\n"));
+        }
+
+        [Fact]
+        public void DoubleHashPastesTwoTokensIntoOne()
+        {
+            var text = Run("#define CAT(a, b) a ## b\nint CAT(foo, 1) = CAT(1, 2); int x = CAT(+, +) CAT(<, <=) 1;\n");
+            Assert.Equal("\nint foo1 = 12; int x = ++ <<= 1;\n", text);
+        }
+
+        [Fact]
+        public void DoubleHashWithAnEmptyArgumentIsTheOtherSide()
+        {
+            // (a macro that is nothing takes the space before it too)
+            Assert.Equal("\nint a = x; int b = x; int c =;\n", Run("#define CAT(a, b) a ## b\nint a = CAT(, x); int b = CAT(x, ); int c = CAT(, );\n"));
+        }
+
+        [Fact]
+        public void DoubleHashPastesBeforeTheArgumentsAreExpanded()
+        {
+            var text = Run("#define V 7\n#define N1 5\n#define CAT(a, b) a ## b\n#define XCAT(a, b) CAT(a, b)\nint a = CAT(V, 1); int b = XCAT(V, 1); int c = CAT(N, 1);\n");
+            Assert.Equal("\n\n\n\nint a = V1; int b = 71; int c = 5;\n", text);
+        }
+
+        [Fact]
+        public void DoubleHashInAnObjectMacro()
+        {
+            Assert.Equal("\nint ab;\n", Run("#define X a ## b\nint X;\n"));
+        }
+
+        [Fact]
+        public void DoubleHashPastesTheEndsOfArgumentsWithSeveralTokens()
+        {
+            // the last token of the left argument and the first of the right one are pasted: 2 and 1 make 21
+            Assert.Equal("\nint a = x + 21 + y;\n", Run("#define J(a, b) a ## b\nint a = J(x + 2, 1 + y);\n"));
+        }
+
+        [Fact]
+        public void VariableArgumentsAreAllTheArgumentsAfterTheNamedOnes()
+        {
+            var text = Run("#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)\nLOG(\"x\", 1, 2);\nLOG(\"y\", (3, 4), 5);\n");
+            Assert.Equal("\nprintf(\"x\", 1, 2);\nprintf(\"y\", (3, 4), 5);\n", text);
+        }
+
+        [Fact]
+        public void VariableArgumentsCanBeTheOnlyParameterAndCanBeEmpty()
+        {
+            var text = Run("#define ALL(...) f(__VA_ARGS__)\nint a = ALL(1, 2, 3); int b = ALL(); int c = ALL(x);\n");
+            Assert.Equal("\nint a = f(1, 2, 3); int b = f(); int c = f(x);\n", text);
+        }
+
+        [Fact]
+        public void VariableArgumentsMayBeLeftOut()
+        {
+            Assert.Equal("\nint a = g();\n", Run("#define CALL(f, ...) f(__VA_ARGS__)\nint a = CALL(g);\n"));
+        }
+
+        [Fact]
+        public void CommaBeforeVariableArgumentsGoesWhenThereAreNone()
+        {
+            var text = Run("#define LOG(fmt, ...) p(fmt, ## __VA_ARGS__)\nLOG(\"a\"); LOG(\"a\", 1); LOG(\"a\", 1, 2);\n");
+            Assert.Equal("\np(\"a\"); p(\"a\", 1); p(\"a\", 1, 2);\n", text);
+        }
+
+        [Fact]
+        public void HashOfVariableArgumentsKeepsTheCommas()
+        {
+            Assert.Equal("\nchar *s = \"a, b\";\n", Run("#define SV(...) #__VA_ARGS__\nchar *s = SV(a, b);\n"));
+        }
+
+        [Fact]
+        public void VariableArgumentsGoThroughAnotherMacroAndAreExpanded()
+        {
+            var text = Run("#define N 2\n#define ALL(...) f(__VA_ARGS__)\n#define W(...) ALL(__VA_ARGS__)\nint a = W(N, 3);\n");
+            Assert.Equal("\n\n\nint a = f(2, 3);\n", text);
+        }
+
+        [Fact]
+        public void RedefiningWithOrWithoutVariableArgumentsIsDifferent()
+        {
+            var warnings = new List<string>();
+            Run("#define F(a, ...) a\n#define F(a, ...) a\n#define F(a) a\n", warnings: warnings);
+            Assert.Single(warnings);
+        }
+
+        [Fact]
         public void UndefRemovesAMacro()
         {
             Assert.Equal("\n\nint a = N;\n", Run("#define N 1\n#undef N\nint a = N;\n"));
@@ -195,9 +305,17 @@ namespace OpenKh.Tests.kh2
         [InlineData("#define 3 x\n", "#define expects a name")]
         [InlineData("#define defined 1\n", "cannot be defined")]
         [InlineData("#define F(a, a) a\n", "is repeated")]
-        [InlineData("#define F(a, ...) a\n", "not supported")]
-        [InlineData("#define S(a) #a\n", "not supported")]
-        [InlineData("#define C a ## b\n", "not supported")]
+        [InlineData("#define F(a, ..., b) a\n", "'...' must be the last parameter")]
+        [InlineData("#define F(__VA_ARGS__) a\n", "A parameter name is expected")]
+        [InlineData("#define V __VA_ARGS__\n", "__VA_ARGS__ can be used only")]
+        [InlineData("#define F(a) __VA_ARGS__\n", "__VA_ARGS__ can be used only")]
+        [InlineData("#define S(a) #b\n", "'#' is not followed by a macro parameter")]
+        [InlineData("#define S(a) #\n", "'#' is not followed by a macro parameter")]
+        [InlineData("#define C ## a\n", "either end")]
+        [InlineData("#define C a ##\n", "either end")]
+        [InlineData("#define P(a, b) a ## b\nint x = P(+, -);\n", "does not make a token")]
+        [InlineData("#define P(a, b) a ## b\nint x = P(/, /);\n", "does not make a token")]
+        [InlineData("#define F(a, b, ...) a\nint x = F(1);\n", "takes at least 2 argument(s) but 1 given")]
         [InlineData("#ifdef\n#endif\n", "expects one name")]
         [InlineData("#bogus\n", "Unknown preprocessing directive #bogus")]
         [InlineData("/* never closed\n", "Unterminated comment")]

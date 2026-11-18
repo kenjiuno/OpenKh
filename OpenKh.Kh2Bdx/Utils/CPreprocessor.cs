@@ -149,10 +149,13 @@ namespace OpenKh.Kh2Bdx.Utils
         {
             public string Name = "";
             public List<string>? Params;
+            /// <summary>`F(a, ...)`: the arguments after the named ones are `__VA_ARGS__`</summary>
+            public bool Variadic;
             public List<Tok> Body = new();
 
             public bool SameAs(Macro other) =>
                 (Params == null) == (other.Params == null)
+                && Variadic == other.Variadic
                 && (Params == null || Params.SequenceEqual(other.Params!))
                 && Body.Count == other.Body.Count
                 && Body.Zip(other.Body).All(it => it.First.Text == it.Second.Text && (it.First.Pad != 0) == (it.Second.Pad != 0));
@@ -604,9 +607,16 @@ namespace OpenKh.Kh2Bdx.Utils
                             }
                             if (directive[x].Is("..."))
                             {
-                                throw new CompilerException(directive[x].Position, "Variable arguments of macros are not supported");
+                                // `...` is the last parameter: `F(...)`, `F(a, b, ...)`
+                                if (x + 1 >= directive.Count || !directive[x + 1].Is(")"))
+                                {
+                                    throw new CompilerException(directive[x].Position, "'...' must be the last parameter of the macro");
+                                }
+                                macro.Variadic = true;
+                                x += 2;
+                                break;
                             }
-                            if (directive[x].Kind != Kind.Identifier)
+                            if (directive[x].Kind != Kind.Identifier || directive[x].Text == "__VA_ARGS__")
                             {
                                 throw new CompilerException(directive[x].Position, "A parameter name is expected");
                             }
@@ -634,10 +644,6 @@ namespace OpenKh.Kh2Bdx.Utils
 
                 foreach (var token in directive.Skip(bodyStart))
                 {
-                    if (token.Is("##") || (macro.Params != null && token.Is("#")))
-                    {
-                        throw new CompilerException(token.Position, "The operators # and ## of macros are not supported");
-                    }
                     var copy = token.Clone();
                     copy.Pad = Math.Min(token.Pad, 1);
                     macro.Body.Add(copy);
@@ -645,6 +651,28 @@ namespace OpenKh.Kh2Bdx.Utils
                 if (macro.Body.Count != 0)
                 {
                     macro.Body[0].Pad = 0;
+                }
+
+                // `#` and `##` and `__VA_ARGS__` have to be used the way they are meant
+                bool IsParameter(Tok token) =>
+                    token.Kind == Kind.Identifier && macro.Params != null
+                    && (macro.Params.Contains(token.Text) || (macro.Variadic && token.Text == "__VA_ARGS__"));
+
+                for (int x = 0; x < macro.Body.Count; x++)
+                {
+                    var token = macro.Body[x];
+                    if (token.Is("##") && (x == 0 || x == macro.Body.Count - 1))
+                    {
+                        throw new CompilerException(token.Position, "'##' cannot be at either end of the replacement of a macro");
+                    }
+                    if (macro.Params != null && token.Is("#") && !(x + 1 < macro.Body.Count && IsParameter(macro.Body[x + 1])))
+                    {
+                        throw new CompilerException(token.Position, "'#' is not followed by a macro parameter");
+                    }
+                    if (token.Kind == Kind.Identifier && token.Text == "__VA_ARGS__" && !macro.Variadic)
+                    {
+                        throw new CompilerException(token.Position, "__VA_ARGS__ can be used only in the replacement of a macro with '...'");
+                    }
                 }
 
                 if (_macros.TryGetValue(macro.Name, out var old) && !old.SameAs(macro))
@@ -813,8 +841,9 @@ namespace OpenKh.Kh2Bdx.Utils
                                 break;
                             }
                         }
-                        else if (next.Is(",") && depth == 1)
+                        else if (next.Is(",") && depth == 1 && !(macro.Variadic && arguments.Count > macro.Params.Count))
                         {
+                            // (the commas of `__VA_ARGS__` stay in it)
                             arguments.Add(new List<Tok>());
                             continue;
                         }
@@ -825,11 +854,12 @@ namespace OpenKh.Kh2Bdx.Utils
                     {
                         arguments.Clear();
                     }
-                    if (arguments.Count != macro.Params.Count)
+                    // a macro with `...` takes the named arguments and then any number (also none) for __VA_ARGS__
+                    if (macro.Variadic ? arguments.Count < macro.Params.Count : arguments.Count != macro.Params.Count)
                     {
                         throw new CompilerException(
                             token.Position,
-                            $"The macro '{macro.Name}' takes {macro.Params.Count} argument(s) but {arguments.Count} given"
+                            $"The macro '{macro.Name}' takes {(macro.Variadic ? "at least " : "")}{macro.Params.Count} argument(s) but {arguments.Count} given"
                         );
                     }
 
@@ -842,35 +872,130 @@ namespace OpenKh.Kh2Bdx.Utils
                 return output;
             }
 
-            /// <summary>The replacement of a macro: its body, with the arguments (expanded first) in place of the parameters.</summary>
+            /// <summary>
+            /// The replacement of a macro: its body, with the arguments in place of the parameters.
+            ///
+            ///   a parameter                 the argument, with its macros expanded first
+            ///   #parameter                  the argument (as it is written) in a string
+            ///   a ## b, parameter ## ...    the two tokens next to ## become one token; the arguments next to ## are not expanded
+            ///   , ## __VA_ARGS__            the comma goes when there are no variable arguments (as `gcc` does)
+            /// </summary>
             private List<Tok> Substitute(Macro macro, List<List<Tok>>? arguments, Tok call, ImmutableHashSet<string> hide)
             {
-                var result = new List<Tok>();
-                foreach (var bodyToken in macro.Body)
+                int ParameterIndex(Tok token)
                 {
-                    var parameter = (arguments != null && bodyToken.Kind == Kind.Identifier) ? macro.Params!.IndexOf(bodyToken.Text) : -1;
-                    if (0 <= parameter)
+                    if (arguments == null || token.Kind != Kind.Identifier)
                     {
-                        var expanded = Expand(arguments![parameter], null);
-                        for (int x = 0; x < expanded.Count; x++)
+                        return -1;
+                    }
+                    var index = macro.Params!.IndexOf(token.Text);
+                    return 0 <= index ? index : (macro.Variadic && token.Text == "__VA_ARGS__" ? macro.Params.Count : -1);
+                }
+
+                // the argument as it is written; there may be none for __VA_ARGS__
+                List<Tok> RawArgument(int index) => index < arguments!.Count ? arguments[index] : new List<Tok>();
+
+                Tok FromBody(Tok bodyToken)
+                {
+                    var copy = bodyToken.Clone();
+                    copy.Synth = true;
+                    copy.Hide = Union(copy.Hide, hide);
+                    // errors and __LINE__ are at the call
+                    copy.Line = call.Line;
+                    copy.Column = call.Column;
+                    copy.File = call.File;
+                    return copy;
+                }
+
+                IEnumerable<Tok> FromArgument(IEnumerable<Tok> tokens, int firstPad)
+                {
+                    var first = true;
+                    foreach (var token in tokens)
+                    {
+                        var copy = token.Clone();
+                        copy.Pad = first ? firstPad : Math.Min(copy.Pad, 1);
+                        copy.Synth = true;
+                        copy.Hide = Union(copy.Hide, hide);
+                        first = false;
+                        yield return copy;
+                    }
+                }
+
+                var result = new List<Tok>();
+                var body = macro.Body;
+                var placemarker = false; // the last thing was a parameter that has no tokens: next to `##` it is nothing to paste to
+
+                for (int i = 0; i < body.Count; i++)
+                {
+                    var token = body[i];
+
+                    if (arguments != null && token.Is("#"))
+                    {
+                        // the operand is a parameter (checked when the macro was defined)
+                        result.Add(Stringify(RawArgument(ParameterIndex(body[i + 1])), token, call, hide));
+                        placemarker = false;
+                        i++;
+                        continue;
+                    }
+
+                    if (token.Is("##"))
+                    {
+                        var right = body[i + 1];
+                        var rightIndex = ParameterIndex(right);
+                        i++;
+
+                        // `, ## __VA_ARGS__`
+                        if (rightIndex == macro.Params?.Count && macro.Variadic && arguments != null
+                            && !placemarker && result.Count != 0 && result[^1].Is(","))
                         {
-                            var copy = expanded[x].Clone();
-                            copy.Pad = x == 0 ? bodyToken.Pad : Math.Min(copy.Pad, 1);
-                            copy.Synth = true;
-                            copy.Hide = Union(copy.Hide, hide);
-                            result.Add(copy);
+                            var variable = RawArgument(rightIndex);
+                            if (variable.Count == 0)
+                            {
+                                result.RemoveAt(result.Count - 1);
+                            }
+                            else
+                            {
+                                result.AddRange(FromArgument(variable, 1));
+                            }
+                            placemarker = false;
+                            continue;
                         }
+
+                        var rightTokens = 0 <= rightIndex ? FromArgument(RawArgument(rightIndex), 0).ToList() : new List<Tok> { FromBody(right) };
+                        if (rightTokens.Count == 0)
+                        {
+                            placemarker = true;
+                            continue;
+                        }
+
+                        if (result.Count == 0 || placemarker)
+                        {
+                            rightTokens[0].Pad = Math.Min(right.Pad, 1);
+                            result.AddRange(rightTokens);
+                        }
+                        else
+                        {
+                            result[^1] = Paste(result[^1], rightTokens[0], call, hide);
+                            result.AddRange(rightTokens.Skip(1));
+                        }
+                        placemarker = false;
+                        continue;
+                    }
+
+                    var index = ParameterIndex(token);
+                    if (0 <= index)
+                    {
+                        // next to `##` the argument is not expanded
+                        var beforePaste = i + 1 < body.Count && body[i + 1].Is("##");
+                        var tokens = beforePaste ? RawArgument(index) : Expand(RawArgument(index), null);
+                        var copies = FromArgument(tokens, token.Pad).ToList();
+                        result.AddRange(copies);
+                        placemarker = copies.Count == 0;
                     }
                     else
                     {
-                        var copy = bodyToken.Clone();
-                        copy.Synth = true;
-                        copy.Hide = Union(copy.Hide, hide);
-                        // errors and __LINE__ are at the call
-                        copy.Line = call.Line;
-                        copy.Column = call.Column;
-                        copy.File = call.File;
-                        result.Add(copy);
+                        result.Add(FromBody(token));
+                        placemarker = false;
                     }
                 }
 
@@ -879,6 +1004,54 @@ namespace OpenKh.Kh2Bdx.Utils
                     result[0].Pad = call.Pad;
                 }
                 return result;
+            }
+
+            /// <summary>`#x`: the argument as it is written, in a string (with a space where there was space).</summary>
+            private static Tok Stringify(List<Tok> argument, Tok hash, Tok call, ImmutableHashSet<string> hide)
+            {
+                var text = new StringBuilder("\"");
+                for (int x = 0; x < argument.Count; x++)
+                {
+                    var token = argument[x];
+                    if (0 < x && 0 < token.Pad)
+                    {
+                        text.Append(' ');
+                    }
+                    // a string or a character keeps its quotes, with the backslashes and the double quotes escaped
+                    text.Append(token.Kind == Kind.String ? token.Text.Replace("\\", "\\\\").Replace("\"", "\\\"") : token.Text);
+                }
+                text.Append('"');
+
+                return new Tok
+                {
+                    Kind = Kind.String,
+                    Text = text.ToString(),
+                    Pad = hash.Pad,
+                    Line = call.Line,
+                    Column = call.Column,
+                    File = call.File,
+                    Synth = true,
+                    Hide = Union(null, hide),
+                };
+            }
+
+            /// <summary>`a ## b`: the two tokens written together must make one token.</summary>
+            private static Tok Paste(Tok left, Tok right, Tok call, ImmutableHashSet<string> hide)
+            {
+                var text = left.Text + right.Text;
+                var lines = Lex(text + "\n", call.File);
+                if (lines.Count != 1 || lines[0].Tokens.Count != 1 || lines[0].Tokens[0].Text != text)
+                {
+                    throw new CompilerException(call.Position, $"Pasting '{left.Text}' and '{right.Text}' does not make a token");
+                }
+
+                var pasted = lines[0].Tokens[0];
+                pasted.Pad = left.Pad;
+                pasted.Line = call.Line;
+                pasted.Column = call.Column;
+                pasted.Synth = true;
+                pasted.Hide = (left.Hide ?? ImmutableHashSet<string>.Empty).Intersect(right.Hide ?? ImmutableHashSet<string>.Empty).Union(hide);
+                return pasted;
             }
 
             // ---- #if ----

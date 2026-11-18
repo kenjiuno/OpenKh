@@ -1078,6 +1078,63 @@ namespace OpenKh.Tests.kh2
         private static string ErrorOf(string code) =>
             Assert.ThrowsAny<Exception>(() => Compile(code.Replace("\r\n", "\n"))).Message;
 
+        private static string CompileWith(string code, Dictionary<string, string>? files = null, params (string, string)[] defines) =>
+            new BdxCEncoder().EncodeC(
+                code,
+                "t.c",
+                preprocessor: new CPreprocessorOptions
+                {
+                    IncludeProvider = new MemoryIncludeProvider(files ?? new Dictionary<string, string>()),
+                    Defines = defines.Select(it => KeyValuePair.Create(it.Item1, it.Item2)).ToArray(),
+                }
+            ).Bdscript.Replace("\r\n", "\n");
+
+        [Fact]
+        public void MacrosAndIncludesAreExpandedBeforeCompiling()
+        {
+            var s = CompileWith(
+                "#include \"consts.h\"\n#define TWICE(x) ((x) * 2)\nint g[SIZE];\nint f() { return TWICE(SIZE) + LIMIT; }\n",
+                new Dictionary<string, string> { ["consts.h"] = "#define SIZE 3\n#define LIMIT 10\n" }
+            );
+            Assert.Contains("g.2:\n", s);
+            Assert.DoesNotContain("g.3:\n", s);
+            Assert.Contains(" push 3\n push 2\n mul\n push 10\n add\n", s);
+        }
+
+        [Fact]
+        public void ConditionalCompilationChoosesTheCode()
+        {
+            var code = "#ifdef FAST\nint f() { return 1; }\n#else\nint f() { return 2; }\n#endif\n";
+            Assert.Contains(" push 1\n", CompileWith(code, null, ("FAST", "1")));
+            Assert.Contains(" push 2\n", CompileWith(code));
+        }
+
+        [Fact]
+        public void ErrorsInAnIncludedFileAreReportedInThatFileAndLine()
+        {
+            var files = new Dictionary<string, string> { ["bad.h"] = "int ok;\n\nvoid f() { x = 1; }\n" };
+            var message = Assert.ThrowsAny<Exception>(() => CompileWith("#include \"bad.h\"\n", files)).Message;
+            Assert.StartsWith("bad.h(3, 11):", message);
+        }
+
+        [Fact]
+        public void ErrorsAfterAnIncludeAreAtTheLineOfTheMainFile()
+        {
+            var files = new Dictionary<string, string> { ["a.h"] = "int a;\nint b;\nint c;\n" };
+            var message = Assert.ThrowsAny<Exception>(() => CompileWith("#define N 1\n#include \"a.h\"\n\nvoid f() { x = N; }\n", files)).Message;
+            Assert.StartsWith("t.c(4, 11):", message);
+        }
+
+        [Fact]
+        public void PreprocessorCanBeSwitchedOff()
+        {
+            // the directives are ignored as before, so N is not defined
+            Assert.ThrowsAny<Exception>(() =>
+                new BdxCEncoder().EncodeC("#define N 1\nint f() { return N; }\n", "t.c", preprocessor: new CPreprocessorOptions { Enabled = false })
+            );
+            new BdxCEncoder().EncodeC("#include \"missing.h\"\nint f() { return 1; }\n", "t.c", preprocessor: new CPreprocessorOptions { Enabled = false });
+        }
+
         [Fact]
         public void ErrorsAreReportedAtTheLineOfTheTextWithoutMarkers()
         {

@@ -9,6 +9,7 @@ namespace OpenKh.Command.Bdxio
     [Subcommand(typeof(DecodeCommand))]
     [Subcommand(typeof(EncodeCommand))]
     [Subcommand(typeof(EncodeCCommand))]
+    [Subcommand(typeof(CppCommand))]
     internal class Program
     {
         static int Main(string[] args)

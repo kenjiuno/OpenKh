@@ -48,6 +48,26 @@ namespace OpenKh.Command.Bdxio.Commands
         [Option(LongName = "temp-size", ShortName = "", Description = "TempSize written into the header (default: 512)")]
         public int TempSize { get; set; } = 512;
 
+        [Option(
+            CommandOptionType.MultipleValue,
+            LongName = "include-dir",
+            ShortName = "I",
+            Description = "Directory to look for the files of #include (can be repeated)")]
+        public string[] IncludeDirectories { get; set; } = Array.Empty<string>();
+
+        [Option(
+            CommandOptionType.MultipleValue,
+            LongName = "define",
+            ShortName = "D",
+            Description = "Define a macro: NAME, NAME=value or NAME(a,b)=body (can be repeated). NAME alone is 1")]
+        public string[] Defines { get; set; } = Array.Empty<string>();
+
+        [Option(
+            LongName = "no-preprocess",
+            ShortName = "",
+            Description = "Do not run the preprocessor: #define, #include and so on are ignored")]
+        public bool NoPreprocess { get; set; }
+
         protected int OnExecute(CommandLineApplication app)
         {
             var logger = LogManager.GetLogger("EncodeC");
@@ -64,7 +84,8 @@ namespace OpenKh.Command.Bdxio.Commands
             var result = new BdxCEncoder()
                 .EncodeC(
                     File.ReadAllText(InputFile),
-                    InputFile
+                    InputFile,
+                    preprocessor: CppCommand.CreateOptions(IncludeDirectories, Defines) with { Enabled = !NoPreprocess }
                 );
 
             var text = WithHeader

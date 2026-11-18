@@ -27,12 +27,20 @@ namespace OpenKh.Kh2Bdx.Utils
             string script,
             string scriptName,
             TextWriter? output = null,
-            TextWriter? errorOutput = null
+            TextWriter? errorOutput = null,
+            CPreprocessorOptions? preprocessor = null
         )
         {
             var logger = LogManager.GetLogger("BdxCEncoder");
 
             //TODO #pragma defsyscall trap_puti 0 0
+
+            // the preprocessor runs first (unless it is disabled); its line markers give the errors the lines of the original files
+            var preprocessorOptions = preprocessor ?? new CPreprocessorOptions();
+            if (preprocessorOptions.Enabled)
+            {
+                script = new CPreprocessor(preprocessorOptions).Process(script, scriptName);
+            }
 
             var stream = FromString(script, scriptName);
 

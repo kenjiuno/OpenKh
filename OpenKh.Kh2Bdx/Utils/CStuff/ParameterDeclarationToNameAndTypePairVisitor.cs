@@ -13,6 +13,36 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         ReduceTypeDesc? Types = null,
         Func<string, VarRef?>? GetVar = null)
     {
+        /// <summary>
+        /// `typedef T name;`, `typedef struct { ... } V, *PV;`, `typedef int Row[4];`: define the names of the
+        /// declarators as types. False if the declaration is not a typedef.
+        /// </summary>
+        internal bool TryDeclareTypedefs(CPP14Parser.SimpleDeclarationContext simpleDeclaration)
+        {
+            if (simpleDeclaration.declSpecifierSeq() is not { } specs || Types == null)
+            {
+                return false;
+            }
+
+            var reduced = ReduceTypeDesc2(specs);
+            if (!reduced.Typedef)
+            {
+                return false;
+            }
+
+            foreach (var initDeclarator in simpleDeclaration.initDeclaratorList()?.initDeclarator() ?? Array.Empty<CPP14Parser.InitDeclaratorContext>())
+            {
+                if (initDeclarator.initializer() != null)
+                {
+                    throw new CompilerException(GetSourceRef(initDeclarator), "A typedef cannot have an initializer");
+                }
+
+                var pair = ReduceDeclarator(initDeclarator.declarator(), reduced.TypeDesc);
+                Types.Typedefs[pair.Name] = pair.Type;
+            }
+            return true;
+        }
+
         internal ArgPair Reduce(CPP14Parser.ParameterDeclarationContext parameterDeclaration)
         {
             var baseType = ReduceTypeDesc2(

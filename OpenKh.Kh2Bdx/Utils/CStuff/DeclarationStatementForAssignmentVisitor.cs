@@ -48,6 +48,18 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 varTypePair = ReduceTypeDesc2(declSpecifierSeq);
             }
 
+            if (varTypePair is { Typedef: true })
+            {
+                // typedef: names for types; nothing to compile
+                new ParameterDeclarationToNameAndTypePairVisitor(
+                    ReduceTypeDesc2,
+                    GetSourceRef,
+                    ExpressionToVarRefVisitor.ReduceTypeDesc1,
+                    CHelper.GetVar
+                ).TryDeclareTypedefs(simpleDeclaration);
+                return;
+            }
+
             if (simpleDeclaration.initDeclaratorList() is var initDeclaratorList
                 && initDeclaratorList != null)
             {

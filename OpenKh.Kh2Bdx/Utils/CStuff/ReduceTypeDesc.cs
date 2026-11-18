@@ -13,6 +13,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         {
             var declSpecifiers = declSpecifierSeq.declSpecifier().AsSpan();
             var isStatic = false;
+            var isTypedef = false;
             while (true)
             {
                 if (declSpecifiers.Length != 0)
@@ -22,6 +23,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         declSpecifiers = declSpecifiers.Slice(1);
                         continue;
                     }
+                }
+                if (declSpecifiers.Length != 0 && declSpecifiers[0].Typedef() != null)
+                {
+                    declSpecifiers = declSpecifiers.Slice(1);
+                    isTypedef = true;
+                    continue;
                 }
                 if (declSpecifiers.Length != 0)
                 {
@@ -40,7 +47,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 && declSpecifiers[0]?.typeSpecifier() is var typeSpecifier0
                 && typeSpecifier0 != null)
             {
-                return new TypeDescAndStorage(ReduceTypeSpecifier1(typeSpecifier0), isStatic);
+                return new TypeDescAndStorage(ReduceTypeSpecifier1(typeSpecifier0), isStatic, isTypedef);
             }
             else if (declSpecifiers.Length == 2
                 && declSpecifiers[0]?.typeSpecifier() is var typeSpecifierW0
@@ -48,7 +55,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 && declSpecifiers[1]?.typeSpecifier() is var typeSpecifierW1
                 && typeSpecifierW1 != null)
             {
-                return new TypeDescAndStorage(ReduceTypeSpecifier2(typeSpecifierW0, typeSpecifierW1), isStatic);
+                return new TypeDescAndStorage(ReduceTypeSpecifier2(typeSpecifierW0, typeSpecifierW1), isStatic, isTypedef);
             }
             else
             {
@@ -208,7 +215,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 throw new CompilerException(GetSourceRef(classHead), $"struct {tagName} is already defined");
             }
 
-            var baseName = tagName != null ? $"struct {tagName}" : "struct";
+            // a struct without a tag is a type of its own (`typedef struct { ... } V;`)
+            var baseName = tagName != null ? $"struct {tagName}" : $"struct <anonymous {++_anonymousStructs}>";
 
             // Pass 1: the tag is visible as an empty type, only to measure the size
             // (so that `struct V { struct V *next; }` can name itself).
@@ -322,9 +330,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             throw new CompilerException(GetSourceRef(elaborated), "Unsupported elaborated type specifier");
         }
 
+        private int _anonymousStructs;
+
+        /// <summary>names defined by `typedef`, with the types they stand for</summary>
+        internal Dictionary<string, TypeDesc> Typedefs { get; } = new();
+
         private TypeDesc LookupStruct(string name, Antlr4.Runtime.ParserRuleContext context)
         {
-            return Structs.TryGetValue(name, out var type)
+            return Structs.TryGetValue(name, out var type) || Typedefs.TryGetValue(name, out type)
                 ? type
                 : throw new CompilerException(GetSourceRef(context), $"Unknown type '{name}'");
         }

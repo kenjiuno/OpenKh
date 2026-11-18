@@ -58,9 +58,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             foreach (var declaration in declarationseq.declaration())
             {
                 // struct definitions must be known before signatures that use them
-                if (declaration.blockDeclaration()?.simpleDeclaration()?.declSpecifierSeq() is { } specs)
+                if (declaration.blockDeclaration()?.simpleDeclaration() is { } simpleDeclaration
+                    && simpleDeclaration.declSpecifierSeq() is { } specs)
                 {
                     ReduceTypeDesc1.Reduce(specs);
+
+                    // and so must typedef names
+                    new ParameterDeclarationToNameAndTypePairVisitor(ReduceTypeDesc1.Reduce, GetSourceRef, ReduceTypeDesc1)
+                        .TryDeclareTypedefs(simpleDeclaration);
                 }
 
                 if (declaration.functionDefinition() is var fd && fd != null && fd.functionBody() != null)
@@ -980,11 +985,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return true;
             }
 
-            // `g(&s);` is parsed as a declaration whose type name is `g`. If it is not a struct tag, it is an expression.
+            // `g(&s);` is parsed as a declaration whose type name is `g`. If it is not a struct tag or a typedef name, it is an expression.
             var typeName = (declSpecifierSeq.declSpecifier().Length == 1)
                 ? declSpecifierSeq.declSpecifier()[0].typeSpecifier()?.trailingTypeSpecifier()?.simpleTypeSpecifier()?.theTypeName()?.className()?.Identifier()?.GetText()
                 : null;
-            return typeName != null && !ReduceTypeDesc1.Structs.ContainsKey(typeName);
+            return typeName != null && !ReduceTypeDesc1.Structs.ContainsKey(typeName) && !ReduceTypeDesc1.Typedefs.ContainsKey(typeName);
         }
 
         private void WriteStatementJumpStatement(CPP14Parser.JumpStatementContext jumpStatement, WriteHelper writeHelper)

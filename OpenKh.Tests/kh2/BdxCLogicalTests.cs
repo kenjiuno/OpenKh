@@ -1076,6 +1076,55 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void TypedefNameIsTheType()
+        {
+            var s = Compile("typedef int s32; typedef unsigned short u16; s32 g; s32 f(u16 a) { s32 n; n = a; return n; }");
+            Assert.Contains("section .bss\ng:\n resb 4", s);
+            Assert.Contains("f: ; func f\n pop.sp 0\n", s);
+        }
+
+        [Fact]
+        public void TypedefOfPointersArraysAndStructs()
+        {
+            var s = Compile(
+                "typedef struct P { int x; int y; } P; typedef struct { int a; } A, *PA; typedef int Row[3]; typedef Row Grid[2]; typedef P *PP;" +
+                "int f() { PA pa; Grid g; PP pp; return sizeof(Grid) + sizeof(P) + sizeof(A) + sizeof(PP); }"
+            );
+            // 24 + 8 + 4 + 4
+            Assert.Contains(" push 24\n", s);
+            Assert.Contains(" push 8\n", s);
+        }
+
+        [Fact]
+        public void TypedefOfAnonymousStructsAreDistinctTypes()
+        {
+            Assert.ThrowsAny<Exception>(() => Compile("typedef struct { int a; } A; typedef struct { int a; } B; void f() { A x; B y; x = y; }"));
+            Compile("typedef struct { int a; } A; void f() { A x; A y; x = y; }");
+        }
+
+        [Fact]
+        public void TypedefOfEnumAndLocalTypedef()
+        {
+            var s = Compile("typedef enum { OFF, ON = 4 } Mode; Mode g = ON; int f() { typedef int Local; Local v = 3; return v; }");
+            Assert.Contains("_initc:\n push 4\n pop.wp g\n ret\n", s);
+        }
+
+        [Fact]
+        public void TypedefNameWorksInCallsAndCasts()
+        {
+            Compile("typedef int s32; s32 id(s32 a) { return a; } s32 f(s32 b) { id(b); return (s32)b; }");
+        }
+
+        [Theory]
+        [InlineData("typedef int s32 = 3;")]
+        [InlineData("typedef Unknown T;")]
+        [InlineData("void f() { Nope x; }")]
+        public void BadTypedef(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
         public void EnumeratorsAreIntConstants()
         {
             var s = Compile("enum Color { RED, GREEN = 5, BLUE }; int f() { return RED + GREEN + BLUE; }");

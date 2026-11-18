@@ -1120,7 +1120,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             }
             else if (unaryExpression.unaryExpression() is { } operand)
             {
-                type = VisitUnaryExpression(operand).Type;
+                // `sizeof(Name)` is read as an expression in parentheses when Name is a typedef name
+                var name = operand.GetText().Trim('(', ')');
+                type = System.Text.RegularExpressions.Regex.IsMatch(name, @"^[A-Za-z_]\w*$")
+                    && CHelper.GetVar(name) == null
+                    && ReduceTypeDesc1.Typedefs.TryGetValue(name, out var typedefType)
+                    ? typedefType
+                    : VisitUnaryExpression(operand).Type;
             }
             else
             {

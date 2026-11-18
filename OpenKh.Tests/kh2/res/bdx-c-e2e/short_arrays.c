@@ -14,31 +14,31 @@ void main() {
   short *p;
   int i;
   for (i = 0; i < 5; i++) { a[i] = i * 1000 - 2000; }
-  trap_puti("a=", a[0] + 10000);
-  trap_puti("a2=", a[2] + 10000);
-  trap_puti("a4=", a[4]);
-  trap_puti("neg=", a[1] < 0);
-  trap_puti("sum=", sum(a, 5) + 10000);
-  trap_puti("b=", b[0] * 1000000 + b[2] * 100 + b[1] + b[3] + 1000);
+  trap_puti(a[0] + 10000, "a=");
+  trap_puti(a[2] + 10000, "a2=");
+  trap_puti(a[4], "a4=");
+  trap_puti(a[1] < 0, "neg=");
+  trap_puti(sum(a, 5) + 10000, "sum=");
+  trap_puti(b[0] * 1000000 + b[2] * 100 + b[1] + b[3] + 1000, "b=");
   u[0] = 65535; u[1] = 40000; u[2] = 1;
-  trap_puti("u=", u[0] + u[1] + u[2]);
-  trap_puti("gu=", gu[0] + gu[1]);
-  trap_puti("c=", sum(c, 3) * 100 + sizeof(c));
+  trap_puti(u[0] + u[1] + u[2], "u=");
+  trap_puti(gu[0] + gu[1], "gu=");
+  trap_puti(sum(c, 3) * 100 + sizeof(c), "c=");
   m[1][2] = 7; m[0][1] = -3; m[1][0] = 5;
-  trap_puti("m=", m[1][2] * 100 + m[1][0] * 10 + m[0][1] + 10);
+  trap_puti(m[1][2] * 100 + m[1][0] * 10 + m[0][1] + 10, "m=");
   gh[3] = 1234; gh[4] = -1;
-  trap_puti("gh=", gh[3] * 10 + gh[4] + 10);
+  trap_puti(gh[3] * 10 + gh[4] + 10, "gh=");
   p = a;
   p++;
-  trap_puti("p=", *p + 10000);
+  trap_puti(*p + 10000, "p=");
   *p = 77; p[1] += 8; p[2]++;
-  trap_puti("pp=", a[1] * 1000 + a[2] * 10 + a[3] + 20000);
-  trap_puti("sz=", sizeof(a) * 100 + sizeof(m) + sizeof(struct R) * 1000);
+  trap_puti(a[1] * 1000 + a[2] * 10 + a[3] + 20000, "pp=");
+  trap_puti(sizeof(a) * 100 + sizeof(m) + sizeof(struct R) * 1000, "sz=");
   r.id = 9; r.tag = 'x';
   for (i = 0; i < 3; i++) { r.v[i] = i + 100; }
   q = r;
   r.v[0] = 0;
-  trap_puti("st=", q.v[0] * 10000 + q.v[2] * 10 + q.id + q.tag - 'x');
+  trap_puti(q.v[0] * 10000 + q.v[2] * 10 + q.id + q.tag - 'x', "st=");
   a[0] = 70000;
-  trap_puti("wrap=", a[0] + 10000);
+  trap_puti(a[0] + 10000, "wrap=");
 }

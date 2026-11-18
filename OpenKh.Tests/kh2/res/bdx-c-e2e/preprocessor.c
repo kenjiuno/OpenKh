@@ -30,10 +30,10 @@ int debug() { return 0; }
 void main() {
   int i;
   for (i = 0; i < SIZE; i++) { table[i] = SQUARE(i + 1); }
-  trap_puti("table=", table[SIZE - 1] * 100 + table[1]);
-  trap_puti("max=", MAX(table[1], table[2]) + MAX(3, MAX(9, 5)));
-  trap_puti("sum=", SUM3(1, SQUARE(2), MAX(3, 4)) * 10 + LIMIT);
-  trap_puti("long=", LONG_BODY);
-  trap_puti("pick=", pick() + debug());
-  trap_puti("line=", __LINE__);
+  trap_puti(table[SIZE - 1] * 100 + table[1], "table=");
+  trap_puti(MAX(table[1], table[2]) + MAX(3, MAX(9, 5)), "max=");
+  trap_puti(SUM3(1, SQUARE(2), MAX(3, 4)) * 10 + LIMIT, "sum=");
+  trap_puti(LONG_BODY, "long=");
+  trap_puti(pick() + debug(), "pick=");
+  trap_puti(__LINE__, "line=");
 }

@@ -41,20 +41,20 @@ int dflt_first(int n) {
   switch (n) { default: return 100; case 1: return 1; }
 }
 void main() {
-  trap_puti("c1=", classify(1));
-  trap_puti("c2=", classify(2));
-  trap_puti("c3=", classify(3));
-  trap_puti("cA=", classify(65));
-  trap_puti("c-1=", classify(0 - 1));
-  trap_puti("c9=", classify(9));
-  trap_puti("nd5=", nodefault(5));
-  trap_puti("nd6=", nodefault(6));
-  trap_puti("loop=", inloop());
-  trap_puti("n11=", nested(1, 1));
-  trap_puti("n12=", nested(1, 2));
-  trap_puti("n13=", nested(1, 3));
-  trap_puti("n24=", nested(2, 4));
-  trap_puti("n3=", nested(3, 0));
-  trap_puti("df1=", dflt_first(1));
-  trap_puti("df2=", dflt_first(2));
+  trap_puti(classify(1), "c1=");
+  trap_puti(classify(2), "c2=");
+  trap_puti(classify(3), "c3=");
+  trap_puti(classify(65), "cA=");
+  trap_puti(classify(0 - 1), "c-1=");
+  trap_puti(classify(9), "c9=");
+  trap_puti(nodefault(5), "nd5=");
+  trap_puti(nodefault(6), "nd6=");
+  trap_puti(inloop(), "loop=");
+  trap_puti(nested(1, 1), "n11=");
+  trap_puti(nested(1, 2), "n12=");
+  trap_puti(nested(1, 3), "n13=");
+  trap_puti(nested(2, 4), "n24=");
+  trap_puti(nested(3, 0), "n3=");
+  trap_puti(dflt_first(1), "df1=");
+  trap_puti(dflt_first(2), "df2=");
 }

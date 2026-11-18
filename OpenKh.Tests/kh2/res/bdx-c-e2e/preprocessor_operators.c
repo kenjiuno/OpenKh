@@ -6,7 +6,7 @@
 #define COUNT 3
 #define FIELD(name, n) int name ## _ ## n
 #define CALL(f, ...) f(__VA_ARGS__)
-#define SHOW(fmt, ...) trap_puti(fmt, ## __VA_ARGS__)
+#define SHOW(value, ...) trap_puti(value, ## __VA_ARGS__)
 #define ALL(...) sum4(__VA_ARGS__)
 #define CALLV(f, ...) f(1 __VA_OPT__(, __VA_ARGS__))
 
@@ -24,11 +24,11 @@ void main() {
   trap_puts(STR(hello   world));
   trap_puts(XSTR(COUNT));
   trap_puts(XSTR(CAT(va, lue)));
-  trap_puti("v=", value1 + value3);
-  trap_puti("fields=", s.a_1 * 10 + s.b_2);
-  trap_puti("call=", CALL(add, 2, 3) * 100 + CALL(sum4, 1, 2, 3, 4));
-  SHOW("x=", 7);
-  trap_puti("all=", ALL(5, 6, 7, 8));
-  trap_puti("paste=", CAT(1, 2) + CAT(0x, 10));
-  trap_puti("opt=", CALLV(one) * 100 + CALLV(add, 2));
+  trap_puti(value1 + value3, "v=");
+  trap_puti(s.a_1 * 10 + s.b_2, "fields=");
+  trap_puti(CALL(add, 2, 3) * 100 + CALL(sum4, 1, 2, 3, 4), "call=");
+  SHOW(7, "x=");
+  trap_puti(ALL(5, 6, 7, 8), "all=");
+  trap_puti(CAT(1, 2) + CAT(0x, 10), "paste=");
+  trap_puti(CALLV(one) * 100 + CALLV(add, 2), "opt=");
 }

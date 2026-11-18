@@ -1468,7 +1468,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             var lines = new List<string?>();
 
             // Verified with bdEmu (MobileAiExec): syscall args are pushed first-to-last, so the
-            // first argument is the deepest tp slot (trap_puti pushes name, then value).
+            // first argument is the deepest tp slot (trap_puti pushes the value, then the name).
             // jal args are pushed last-to-first because the callee pops them into sp slots 0, 4, ...
             var isSyscall = sig.Syscall != null;
             for (int i = 0; i < args.Length; i++)

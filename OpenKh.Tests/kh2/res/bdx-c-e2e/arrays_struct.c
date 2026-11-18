@@ -7,16 +7,16 @@ void main() {
   struct P ps[3] = { { 10, 20 }, { 30, 40 }, { 50, 60 } };
   struct P *q = ps;
   int i;
-  trap_puti("total=", total(ps, 3));
-  trap_puti("gtotal=", total(gps, 4));
-  trap_puti("p1=", (q + 1)->y + q[2].x);
-  trap_puti("deref=", (*(q + 2)).y);
-  trap_puti("pick=", pick(gps, 3).x * 10 + pick(ps, 1).y);
+  trap_puti(total(ps, 3), "total=");
+  trap_puti(total(gps, 4), "gtotal=");
+  trap_puti((q + 1)->y + q[2].x, "p1=");
+  trap_puti((*(q + 2)).y, "deref=");
+  trap_puti(pick(gps, 3).x * 10 + pick(ps, 1).y, "pick=");
   q = &ps[1];
   q->x = 99;
-  trap_puti("set=", ps[1].x + ps[0].x);
+  trap_puti(ps[1].x + ps[0].x, "set=");
   ps[2] = gps[0];
-  trap_puti("copy=", ps[2].x * 10 + ps[2].y);
+  trap_puti(ps[2].x * 10 + ps[2].y, "copy=");
   for (i = 0; i < 3; i++) { gps[i] = ps[i]; }
-  trap_puti("gps=", gps[1].x + gps[3].x);
+  trap_puti(gps[1].x + gps[3].x, "gps=");
 }

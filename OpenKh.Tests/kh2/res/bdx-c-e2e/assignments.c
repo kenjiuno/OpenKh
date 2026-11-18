@@ -4,6 +4,6 @@ void main() {
   int b;
   a += 2;
   b = a = a * 5;
-  trap_puti("a=", a);
-  trap_puti("b=", b);
+  trap_puti(a, "a=");
+  trap_puti(b, "b=");
 }

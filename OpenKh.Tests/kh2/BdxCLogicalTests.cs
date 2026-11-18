@@ -1344,14 +1344,14 @@ namespace OpenKh.Tests.kh2
         [Fact]
         public void PragmaForATrapOfTheTableWithTheSameNumberIsFine()
         {
-            Compile("#pragma defsyscall trap_puti 0 0\nvoid f() { trap_puti(\"x\", 1); }");
+            Compile("#pragma defsyscall trap_puti 0 0\nvoid f() { trap_puti(1, \"x\"); }");
         }
 
         [Fact]
         public void PragmaWithAnotherNumberForATrapOfTheTableNeedsOverride()
         {
             Assert.Contains("add `override`", Assert.ThrowsAny<Exception>(() => Compile("#pragma defsyscall trap_puti 4 4\nvoid f() { }")).Message);
-            var s = Compile("#pragma defsyscall trap_puti 4 4 override\nvoid f() { trap_puti(\"x\", 1); }");
+            var s = Compile("#pragma defsyscall trap_puti 4 4 override\nvoid f() { trap_puti(1, \"x\"); }");
             Assert.Contains("syscall 4, 4 ; trap_puti", s);
         }
 
@@ -1398,10 +1398,10 @@ namespace OpenKh.Tests.kh2
         }
 
         [Theory]
-        [InlineData("int trap_puti(const char *name, int value);", "does not return a value")]
+        [InlineData("int trap_puti(int value, const char *name);", "does not return a value")]
         [InlineData("void trap_frametime(void);", "returns a value")]
-        [InlineData("void trap_puti(const char *name);", "takes 2 argument(s) in the trap table, but the prototype has 1")]
-        [InlineData("void trap_puti(const char *name, int a, int b);", "takes 2 argument(s) in the trap table, but the prototype has 3")]
+        [InlineData("void trap_puti(int value);", "takes 2 argument(s) in the trap table, but the prototype has 1")]
+        [InlineData("void trap_puti(int value, const char *name, int b);", "takes 2 argument(s) in the trap table, but the prototype has 3")]
         [InlineData("struct S { int a; }; struct S trap_frametime(void);", "struct by value")]
         [InlineData("struct S { int a; }; void trap_puti(struct S s, int b);", "struct by value")]
         public void PrototypeThatDiffersFromTheTrapTableIsAnError(string prototype, string expected)
@@ -1426,6 +1426,16 @@ namespace OpenKh.Tests.kh2
             );
             Assert.Contains("syscall 0, 47 ; trap_memory_alloc", s);
             Assert.Contains("syscall 0, 7 ; trap_vector_normalize", s);
+        }
+
+        [Fact]
+        public void DebugPrintTrapsTakeTheValueFirstAndThenTheName()
+        {
+            // as the data pushes them: `push.d.sp 4; push.bd "name"; syscall trap_puti`
+            var s = Compile("#include <kh2/traps.h>\nvoid f(int k, int n) { trap_puti(n, \"n=\"); trap_putf(1.5, \"f=\"); trap_puts(\"text\"); }");
+            Assert.Contains(" push.d.sp 4 ; n\n push.bd __str1\n syscall 0, 0 ; trap_puti\n", s);
+            Assert.Contains(" push.s 1.5\n push.bd __str2\n syscall 0, 1 ; trap_putf\n", s);
+            Assert.Contains(" push.bd __str3\n syscall 0, 2 ; trap_puts\n", s);
         }
 
         [Fact]

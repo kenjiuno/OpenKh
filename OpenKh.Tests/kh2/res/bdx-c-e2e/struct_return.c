@@ -16,28 +16,28 @@ void main() {
   struct P c;
   struct L l;
   b = make(10, 20);
-  trap_puti("a=", a.x * 100 + a.y);
-  trap_puti("b=", b.x * 100 + b.y);
-  trap_puti("member=", make(5, 6).y);
-  trap_puti("getg=", getg().x);
+  trap_puti(a.x * 100 + a.y, "a=");
+  trap_puti(b.x * 100 + b.y, "b=");
+  trap_puti(make(5, 6).y, "member=");
+  trap_puti(getg().x, "getg=");
   c = getg();
-  trap_puti("c=", c.x * 100 + c.y);
-  trap_puti("deref=", deref(&a).y);
-  trap_puti("pass=", pass(b).x);
-  trap_puti("fwd=", fwd(7).x * 100 + fwd(7).y);
+  trap_puti(c.x * 100 + c.y, "c=");
+  trap_puti(deref(&a).y, "deref=");
+  trap_puti(pass(b).x, "pass=");
+  trap_puti(fwd(7).x * 100 + fwd(7).y, "fwd=");
   l = mkl(9);
-  trap_puti("l=", l.a.x * 100 + l.a.y + l.next->x * 10000);
-  trap_putf("l.f=", l.f);
-  trap_puti("arg=", sum(make(100, 23)));
-  trap_puti("chain=", swapp(swapp(make(1, 2))).x);
+  trap_puti(l.a.x * 100 + l.a.y + l.next->x * 10000, "l=");
+  trap_putf(l.f, "l.f=");
+  trap_puti(sum(make(100, 23)), "arg=");
+  trap_puti(swapp(swapp(make(1, 2))).x, "chain=");
   make(1, 2);
   g = make(11, 22);
-  trap_puti("g=", g.x * 100 + g.y);
-  trap_puti("both=", make(1, 2).x + make(30, 40).y);
+  trap_puti(g.x * 100 + g.y, "g=");
+  trap_puti(make(1, 2).x + make(30, 40).y, "both=");
   a = swapp(a);
-  trap_puti("a2=", a.x * 100 + a.y);
+  trap_puti(a.x * 100 + a.y, "a2=");
   {
     struct L m = { make(1, 2), 2.5 };
-    trap_puti("init=", m.a.x * 100 + m.a.y);
+    trap_puti(m.a.x * 100 + m.a.y, "init=");
   }
 }

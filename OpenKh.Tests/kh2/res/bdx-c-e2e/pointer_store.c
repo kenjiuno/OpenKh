@@ -9,12 +9,12 @@ void main() {
   setv(&a, 1, 2);
   setv(a.next, 30, 40);
   inc(&n);
-  trap_puti("a.x=", a.x);
-  trap_puti("a.y=", a.y);
-  trap_puti("b.x=", b.x);
-  trap_puti("b.y=", b.y);
-  trap_puti("n=", n);
-  trap_puti("m=", m);
-  trap_puti("chain=", chain(&a));
-  trap_puti("b.x2=", b.x);
+  trap_puti(a.x, "a.x=");
+  trap_puti(a.y, "a.y=");
+  trap_puti(b.x, "b.x=");
+  trap_puti(b.y, "b.y=");
+  trap_puti(n, "n=");
+  trap_puti(m, "m=");
+  trap_puti(chain(&a), "chain=");
+  trap_puti(b.x, "b.x2=");
 }

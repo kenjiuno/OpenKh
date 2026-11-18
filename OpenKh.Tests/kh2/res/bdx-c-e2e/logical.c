@@ -9,36 +9,36 @@ void main() {
   int *p = 0;
   float f = 2.5;
   int r;
-  trap_puti("and=", (a && b) * 100 + (a && 3) * 10 + (b && a));
-  trap_puti("or=", (a || b) * 100 + (b || 0) * 10 + (b || a));
-  trap_puti("raw=", (7 || 0) + (0 || 9) * 10 + (9 && 7) * 100);
+  trap_puti((a && b) * 100 + (a && 3) * 10 + (b && a), "and=");
+  trap_puti((a || b) * 100 + (b || 0) * 10 + (b || a), "or=");
+  trap_puti((7 || 0) + (0 || 9) * 10 + (9 && 7) * 100, "raw=");
   hits = 0;
   r = t(0) && t(1);
-  trap_puti("sc1=", r * 10 + hits);
+  trap_puti(r * 10 + hits, "sc1=");
   hits = 0;
   r = t(1) || t(1);
-  trap_puti("sc2=", r * 10 + hits);
+  trap_puti(r * 10 + hits, "sc2=");
   hits = 0;
   r = t(1) && t(2) && t(0) && t(5);
-  trap_puti("sc3=", r * 10 + hits);
+  trap_puti(r * 10 + hits, "sc3=");
   hits = 0;
   r = t(0) || t(0) || t(4);
-  trap_puti("sc4=", r * 10 + hits);
-  trap_puti("mix=", (a > 3 && b == 0) + (a < 3 || b != 0) * 10 + (a > 3 || b / 0) * 100);
-  trap_puti("ptr=", (p && p[0]) * 10 + (p || a));
-  trap_puti("flt=", (f && a) * 10 + (f || 0));
-  trap_puti("sel=", pick(1, 10, 20) * 100 + pick(0, 10, 20));
-  trap_puti("nest=", a > 3 ? (b ? 1 : 2) : 3);
+  trap_puti(r * 10 + hits, "sc4=");
+  trap_puti((a > 3 && b == 0) + (a < 3 || b != 0) * 10 + (a > 3 || b / 0) * 100, "mix=");
+  trap_puti((p && p[0]) * 10 + (p || a), "ptr=");
+  trap_puti((f && a) * 10 + (f || 0), "flt=");
+  trap_puti(pick(1, 10, 20) * 100 + pick(0, 10, 20), "sel=");
+  trap_puti(a > 3 ? (b ? 1 : 2) : 3, "nest=");
   hits = 0;
   r = a ? t(11) : t(22);
-  trap_puti("selsc=", r * 10 + hits);
-  trap_puti("selexp=", (a > 3 ? a * 2 : a) + 1);
-  if (a > 3 && b == 0) { trap_puti("if=", 1); }
-  if (a < 3 || b != 0) { trap_puti("if2=", 1); } else { trap_puti("if2=", 2); }
+  trap_puti(r * 10 + hits, "selsc=");
+  trap_puti((a > 3 ? a * 2 : a) + 1, "selexp=");
+  if (a > 3 && b == 0) { trap_puti(1, "if="); }
+  if (a < 3 || b != 0) { trap_puti(1, "if2="); } else { trap_puti(2, "if2="); }
   r = 0;
   while (r < 10 && hits < 100) { r++; }
-  trap_puti("loop=", r);
-  trap_puti("len=", len("abc") > 2 && len("abcd") == 4);
-  trap_puti("chain=", 1 ? 2 ? 3 : 4 : 5);
-  trap_puti("asg=", (r = a > 3 ? 7 : 8));
+  trap_puti(r, "loop=");
+  trap_puti(len("abc") > 2 && len("abcd") == 4, "len=");
+  trap_puti(1 ? 2 ? 3 : 4 : 5, "chain=");
+  trap_puti((r = a > 3 ? 7 : 8), "asg=");
 }

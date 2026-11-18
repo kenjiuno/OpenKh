@@ -22,12 +22,12 @@ void main() {
   own[4] = 3;
   q.v[7] = 5;
   q.t[7] = 'm';
-  trap_puti("a=", sizeof(a) * 100 + a[4]);
-  trap_puti("gp=", sizeof(gp) * 10 + gp[1]);
-  trap_puti("gbuf=", sizeof(gbuf) * 1000 + gbuf[19]);
-  trap_puti("gcopy=", sizeof(gcopy) * 10 + gcopy[4]);
-  trap_puti("ps=", sizeof(ps) * 10 + ps[2].y);
-  trap_puti("buf=", sizeof(buf) * 1000 + buf[15]);
-  trap_puti("own=", sizeof(own) * 10 + own[4]);
-  trap_puti("q=", sizeof(q) * 1000 + q.v[7] * 100 + q.t[7]);
+  trap_puti(sizeof(a) * 100 + a[4], "a=");
+  trap_puti(sizeof(gp) * 10 + gp[1], "gp=");
+  trap_puti(sizeof(gbuf) * 1000 + gbuf[19], "gbuf=");
+  trap_puti(sizeof(gcopy) * 10 + gcopy[4], "gcopy=");
+  trap_puti(sizeof(ps) * 10 + ps[2].y, "ps=");
+  trap_puti(sizeof(buf) * 1000 + buf[15], "buf=");
+  trap_puti(sizeof(own) * 10 + own[4], "own=");
+  trap_puti(sizeof(q) * 1000 + q.v[7] * 100 + q.t[7], "q=");
 }

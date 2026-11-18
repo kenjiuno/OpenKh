@@ -21,24 +21,24 @@ void main() {
   a.name[5] = 0;
   b = a;
   a.name[0] = 'Z';
-  trap_puti("b0=", b.name[0]);
-  trap_puti("a0=", a.name[0]);
-  trap_puti("bl=", len(b.name));
-  trap_puti("sb=", sumbytes(b));
-  trap_puti("n1=", names[1][1]);
-  trap_puti("n2l=", len(names[2]));
-  trap_puti("nl=", len(names[0]) * 100 + len(names[1]) * 10 + len(names[2]));
+  trap_puti(b.name[0], "b0=");
+  trap_puti(a.name[0], "a0=");
+  trap_puti(len(b.name), "bl=");
+  trap_puti(sumbytes(b), "sb=");
+  trap_puti(names[1][1], "n1=");
+  trap_puti(len(names[2]), "n2l=");
+  trap_puti(len(names[0]) * 100 + len(names[1]) * 10 + len(names[2]), "nl=");
   m[1][2] = 'q';
   m[0][3] = 'r';
-  trap_puti("m=", m[1][2] * 1000 + m[0][3]);
-  trap_puti("gm=", gmsg[5]);
-  trap_puti("gl=", len(gmsg));
-  trap_puti("same1=", same(gmsg, "global"));
-  trap_puti("same2=", same(gmsg, "globe"));
+  trap_puti(m[1][2] * 1000 + m[0][3], "m=");
+  trap_puti(gmsg[5], "gm=");
+  trap_puti(len(gmsg), "gl=");
+  trap_puti(same(gmsg, "global"), "same1=");
+  trap_puti(same(gmsg, "globe"), "same2=");
   upper(loc);
-  trap_puti("up=", loc[0] * 10000 + loc[1] * 100 + loc[2]);
+  trap_puti(loc[0] * 10000 + loc[1] * 100 + loc[2], "up=");
   trap_puts(names[1]);
   trap_puts(loc);
   for (i = 0; i < 3; i++) { names[i][0] = 'A' + i; }
-  trap_puti("nn=", names[0][0] * 10000 + names[1][0] * 100 + names[2][0]);
+  trap_puti(names[0][0] * 10000 + names[1][0] * 100 + names[2][0], "nn=");
 }

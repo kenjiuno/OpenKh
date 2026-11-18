@@ -38,13 +38,13 @@ void main() {
   ps[1].x = 7;
   pp = &ps[1];
   prp->a = 4; prp->b = 9;
-  trap_puti("sum=", sum(grow, 3) * 100 + sum(g[1], 3));
-  trap_puti("area=", area(ps[0]) * 100 + area(*pp));
-  trap_puti("gp=", gp.x * 10 + gp.y);
-  trap_puti("pair=", pr.a * 10 + pr.b + gpair.a);
-  trap_puti("mode=", gmode * 100 + flip(m) * 10 + flip(OFF));
-  trap_puti("h=", h);
-  trap_puti("slen=", slen("abcd") + lv + total);
-  trap_puti("sz=", sizeof(Grid) * 100 + sizeof(P) * 10 + sizeof(Mode) + sizeof(Pair) + sizeof(u16));
-  trap_puti("g=", g[1][2] * 10 + g[0][1]);
+  trap_puti(sum(grow, 3) * 100 + sum(g[1], 3), "sum=");
+  trap_puti(area(ps[0]) * 100 + area(*pp), "area=");
+  trap_puti(gp.x * 10 + gp.y, "gp=");
+  trap_puti(pr.a * 10 + pr.b + gpair.a, "pair=");
+  trap_puti(gmode * 100 + flip(m) * 10 + flip(OFF), "mode=");
+  trap_puti(h, "h=");
+  trap_puti(slen("abcd") + lv + total, "slen=");
+  trap_puti(sizeof(Grid) * 100 + sizeof(P) * 10 + sizeof(Mode) + sizeof(Pair) + sizeof(u16), "sz=");
+  trap_puti(g[1][2] * 10 + g[0][1], "g=");
 }

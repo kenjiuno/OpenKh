@@ -8,17 +8,17 @@ void main() {
   for (i = 0; i < 5; i++) { a[i] = i * i; }
   for (i = 0; i < 4; i++) { g[i] = 10 + i; }
   a[2] += 100;
-  trap_puti("a2=", a[2]);
-  trap_puti("a4=", a[4]);
-  trap_puti("sum=", sum(a, 5));
-  trap_puti("gsum=", sum(g, 4));
-  trap_puti("p=", *(a + 3));
+  trap_puti(a[2], "a2=");
+  trap_puti(a[4], "a4=");
+  trap_puti(sum(a, 5), "sum=");
+  trap_puti(sum(g, 4), "gsum=");
+  trap_puti(*(a + 3), "p=");
   int *q = a + 1;
-  trap_puti("q=", q[2]);
-  trap_puti("deref=", *a + *g);
+  trap_puti(q[2], "q=");
+  trap_puti(*a + *g, "deref=");
   m[1][2] = 7; m[0][1] = 3;
-  trap_puti("m=", m[1][2] * 10 + m[0][1]);
+  trap_puti(m[1][2] * 10 + m[0][1], "m=");
   for (i = 0; i < 3; i++) { m[1][i] = i + 20; }
-  trap_puti("row=", m[1][0] + m[1][1] + m[1][2]);
-  trap_puti("dyn=", a[sum(g, 2) - 21]);
+  trap_puti(m[1][0] + m[1][1] + m[1][2], "row=");
+  trap_puti(a[sum(g, 2) - 21], "dyn=");
 }

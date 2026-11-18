@@ -48,6 +48,11 @@ void trap_memory_free(void *p);
 void *trap_teamwork_alloc(int id, int size);   /* the work memory of the allocator `id` (shared) */
 void *trap_worldwork_get(void);                /* the host's WORLDWORK */
 
+/* debug: they print only while the debug window of the host is on (value first, then its name) */
+void trap_puti(int value, const char *name);
+void trap_putf(float value, const char *name);
+void trap_puts(const char *text);
+
 /* system */
 float trap_frametime(void);
 void func_system_set_game_speed(float scale);

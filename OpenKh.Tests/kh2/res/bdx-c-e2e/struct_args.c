@@ -13,14 +13,14 @@ void main() {
   struct P a = { 3, 4 };
   struct P b = { 5, 6 };
   struct L l = { { 1, 2 }, 2.5, &g };
-  trap_puti("dot=", dot(a, b));
-  trap_puti("first=", first(1, b, 2));
+  trap_puti(dot(a, b), "dot=");
+  trap_puti(first(1, b, 2), "first=");
   clobber(a);
-  trap_puti("a=", a.x * 100 + a.y);
-  trap_puti("sum=", sum(l));
-  trap_putf("f=", getf(l));
-  trap_puti("lit=", dot(g, l.a));
-  trap_puti("viaptr=", viaptr(&b));
-  trap_puti("fwd=", fwd(a));
-  trap_puti("dot2=", dot(l.a, *l.next));
+  trap_puti(a.x * 100 + a.y, "a=");
+  trap_puti(sum(l), "sum=");
+  trap_putf(getf(l), "f=");
+  trap_puti(dot(g, l.a), "lit=");
+  trap_puti(viaptr(&b), "viaptr=");
+  trap_puti(fwd(a), "fwd=");
+  trap_puti(dot(l.a, *l.next), "dot2=");
 }

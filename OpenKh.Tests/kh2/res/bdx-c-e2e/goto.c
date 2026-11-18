@@ -34,21 +34,21 @@ void main() {
   int i = 0;
   int sum = 0;
   a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4;
-  trap_puti("find=", find(a, 4, 304));
-  trap_puti("retry=", retry(7));
-  trap_puti("clean=", cleanup(0) + cleanup(1) * 1000 + cleanup(2));
+  trap_puti(find(a, 4, 304), "find=");
+  trap_puti(retry(7), "retry=");
+  trap_puti(cleanup(0) + cleanup(1) * 1000 + cleanup(2), "clean=");
 loop:
   if (i >= 5) { goto end; }
   sum += i;
   i++;
   goto loop;
 end:
-  trap_puti("loop=", sum);
+  trap_puti(sum, "loop=");
   switch (sum) {
     case 10: goto in_switch;
     default: sum = 0;
   }
-  trap_puti("skipped=", 1);
+  trap_puti(1, "skipped=");
 in_switch:
-  trap_puti("sw=", sum);
+  trap_puti(sum, "sw=");
 }

@@ -155,8 +155,8 @@ public sealed class BdVm
         }
         switch (func)
         {
-            case 0: kind = 0; argc = 2; return true; // puti(name, value)
-            case 1: kind = 1; argc = 2; return true; // putf(name, value)
+            case 0: kind = 0; argc = 2; return true; // puti(value, name)
+            case 1: kind = 1; argc = 2; return true; // putf(value, name)
             case 2: kind = 2; argc = 1; return true; // puts(str)
             default: return false;
         }
@@ -605,13 +605,13 @@ public sealed class BdVm
                     Tp = baseAddr;
                     switch (kind)
                     {
-                        case 0: // puti: bdEmu prints a uint (unsigned decimal)
-                            _log.Append(ReadCString(args[0]));
-                            _log.Append(args[1].ToString(CultureInfo.InvariantCulture));
+                        case 0: // puti(value, name): the value is pushed first, then the name. bdEmu prints the name, then a uint (unsigned decimal)
+                            _log.Append(ReadCString(args[1]));
+                            _log.Append(args[0].ToString(CultureInfo.InvariantCulture));
                             break;
-                        case 1: // putf: net48's float.ToString() has 7 significant digits ("G7")
-                            _log.Append(ReadCString(args[0]));
-                            _log.Append(FormatSingle(BitConverter.UInt32BitsToSingle(args[1])));
+                        case 1: // putf(value, name): net48's float.ToString() has 7 significant digits ("G7")
+                            _log.Append(ReadCString(args[1]));
+                            _log.Append(FormatSingle(BitConverter.UInt32BitsToSingle(args[0])));
                             break;
                         default: // puts
                             _log.Append(ReadCString(args[0]));

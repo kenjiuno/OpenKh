@@ -19,24 +19,24 @@ void main() {
   struct Item it;
   int i;
   int mix = GREEN + BLUE * 10 + HIGH * 100;
-  trap_puti("vals=", RED * 100000 + GREEN * 10000 + BLUE * 1000 + LOW + 0);
-  trap_puti("level=", HIGH + MID + LOW + NEG + AFTER);
-  trap_puti("anon=", ANON_A * 10 + ANON_B);
-  trap_puti("gc=", gc);
-  trap_puti("sz=", sizeof(table) * 10 + sizeof(enum Color) + sizeof(it));
+  trap_puti(RED * 100000 + GREEN * 10000 + BLUE * 1000 + LOW + 0, "vals=");
+  trap_puti(HIGH + MID + LOW + NEG + AFTER, "level=");
+  trap_puti(ANON_A * 10 + ANON_B, "anon=");
+  trap_puti(gc, "gc=");
+  trap_puti(sizeof(table) * 10 + sizeof(enum Color) + sizeof(it), "sz=");
   c = next(c);
-  trap_puti("next=", c * 10 + next(c));
-  trap_puti("next3=", next(next(next(c))));
-  trap_puti("w=", weight(HIGH) * 100 + weight(l) * 10 + weight(LOW));
+  trap_puti(c * 10 + next(c), "next=");
+  trap_puti(next(next(next(c))), "next3=");
+  trap_puti(weight(HIGH) * 100 + weight(l) * 10 + weight(LOW), "w=");
   it.color = BLUE; it.level = HIGH; it.tag[ANON_A] = 'q';
-  trap_puti("it=", it.color * 10000 + it.level * 100 + it.tag[ANON_A] - 100);
+  trap_puti(it.color * 10000 + it.level * 100 + it.tag[ANON_A] - 100, "it=");
   for (i = RED; i <= BLUE; i++) { table[i] = i * 2; }
-  trap_puti("tab=", table[GREEN] * 100 + table[BLUE]);
-  trap_puti("mix=", mix);
-  trap_puti("cmp=", (c == GREEN) * 10 + (c != BLUE));
+  trap_puti(table[GREEN] * 100 + table[BLUE], "tab=");
+  trap_puti(mix, "mix=");
+  trap_puti((c == GREEN) * 10 + (c != BLUE), "cmp=");
   {
     int RED = 77;
-    trap_puti("shadow=", RED);
+    trap_puti(RED, "shadow=");
   }
-  trap_puti("after=", RED + 5);
+  trap_puti(RED + 5, "after=");
 }

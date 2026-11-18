@@ -197,6 +197,49 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void VaOptIsTheContentOnlyWhenThereAreVariableArguments()
+        {
+            var text = Run("#define F(a, ...) f(a __VA_OPT__(, __VA_ARGS__))\nint x = F(1); int y = F(1, 2, 3); int z = F(1,);\n");
+            Assert.Equal("\nint x = f(1); int y = f(1, 2, 3); int z = f(1);\n", text);
+        }
+
+        [Fact]
+        public void VaOptWithoutNamedParameters()
+        {
+            var text = Run("#define G(...) g(__VA_OPT__(x y))\nint a = G(); int b = G(1);\n");
+            Assert.Equal("\nint a = g(); int b = g(x y);\n", text);
+        }
+
+        [Fact]
+        public void VaOptNextToDoubleHashPastesOrDisappears()
+        {
+            var text = Run(
+                "#define P(a, ...) a ## __VA_OPT__(_x)\n#define Q(a, ...) __VA_OPT__(x_) ## a\n" +
+                "int P(foo); int P(bar, 1); int Q(foo); int Q(bar, 1);\n"
+            );
+            Assert.Equal("\n\nint foo; int bar_x; int foo; int x_bar;\n", text);
+        }
+
+        [Fact]
+        public void VaOptContentIsExpandedAgainAndCanUseParameters()
+        {
+            var text = Run("#define N 5\n#define H(a, ...) a __VA_OPT__(+ N + a)\nint x = H(1); int y = H(2, 0);\n");
+            Assert.Equal("\n\nint x = 1; int y = 2 + 5 + 2;\n", text);
+        }
+
+        [Theory]
+        [InlineData("#define F(a) __VA_OPT__(a)\n", "__VA_OPT__ can be used only")]
+        [InlineData("#define F(...) __VA_OPT__\n", "__VA_OPT__ must be followed by '('")]
+        [InlineData("#define F(...) __VA_OPT__ x\n", "__VA_OPT__ must be followed by '('")]
+        [InlineData("#define F(...) __VA_OPT__(x\n", "is not closed")]
+        [InlineData("#define F(...) __VA_OPT__(__VA_OPT__(x))\n", "cannot be nested")]
+        [InlineData("#define F(...) #__VA_OPT__(x)\n", "'#' is not followed by a macro parameter")]
+        public void VaOptErrors(string source, string expected)
+        {
+            Assert.Contains(expected, Error(source));
+        }
+
+        [Fact]
         public void UndefRemovesAMacro()
         {
             Assert.Equal("\n\nint a = N;\n", Run("#define N 1\n#undef N\nint a = N;\n"));

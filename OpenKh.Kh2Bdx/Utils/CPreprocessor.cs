@@ -673,6 +673,33 @@ namespace OpenKh.Kh2Bdx.Utils
                     {
                         throw new CompilerException(token.Position, "__VA_ARGS__ can be used only in the replacement of a macro with '...'");
                     }
+                    if (token.Kind == Kind.Identifier && token.Text == "__VA_OPT__")
+                    {
+                        if (!macro.Variadic)
+                        {
+                            throw new CompilerException(token.Position, "__VA_OPT__ can be used only in the replacement of a macro with '...'");
+                        }
+                        if (!(x + 1 < macro.Body.Count && macro.Body[x + 1].Is("(")))
+                        {
+                            throw new CompilerException(token.Position, "__VA_OPT__ must be followed by '('");
+                        }
+                        // up to the `)` that closes it; there is no __VA_OPT__ in it
+                        var depth = 1;
+                        var end = x + 2;
+                        for (; end < macro.Body.Count && 0 < depth; end++)
+                        {
+                            if (macro.Body[end].Is("(")) depth++;
+                            else if (macro.Body[end].Is(")")) depth--;
+                            else if (macro.Body[end].Kind == Kind.Identifier && macro.Body[end].Text == "__VA_OPT__")
+                            {
+                                throw new CompilerException(macro.Body[end].Position, "__VA_OPT__ cannot be nested");
+                            }
+                        }
+                        if (0 < depth)
+                        {
+                            throw new CompilerException(token.Position, "The ')' of __VA_OPT__ is not closed");
+                        }
+                    }
                 }
 
                 if (_macros.TryGetValue(macro.Name, out var old) && !old.SameAs(macro))
@@ -922,7 +949,9 @@ namespace OpenKh.Kh2Bdx.Utils
                 }
 
                 var result = new List<Tok>();
-                var body = macro.Body;
+                var body = (macro.Variadic && arguments != null)
+                    ? ResolveVaOpt(macro.Body, 0 < RawArgument(macro.Params!.Count).Count)
+                    : macro.Body;
                 var placemarker = false; // the last thing was a parameter that has no tokens: next to `##` it is nothing to paste to
 
                 for (int i = 0; i < body.Count; i++)
@@ -1002,6 +1031,56 @@ namespace OpenKh.Kh2Bdx.Utils
                 if (result.Count != 0)
                 {
                     result[0].Pad = call.Pad;
+                }
+                return result;
+            }
+
+            /// <summary>
+            /// `__VA_OPT__(content)` is the content when there are variable arguments, and nothing when there are not.
+            /// Nothing next to `##` is a placemarker: it takes one `##` with it, so that the two sides are pasted.
+            /// </summary>
+            private static List<Tok> ResolveVaOpt(List<Tok> body, bool hasVariableArguments)
+            {
+                var result = new List<Tok>();
+                for (int i = 0; i < body.Count; i++)
+                {
+                    var token = body[i];
+                    if (token.Kind != Kind.Identifier || token.Text != "__VA_OPT__")
+                    {
+                        result.Add(token);
+                        continue;
+                    }
+
+                    // the content is between `(` at i + 1 and its `)` (checked when the macro was defined)
+                    var depth = 1;
+                    var end = i + 2;
+                    for (; 0 < depth; end++)
+                    {
+                        if (body[end].Is("(")) depth++;
+                        else if (body[end].Is(")")) depth--;
+                    }
+                    // `end` is after the `)`
+
+                    if (hasVariableArguments)
+                    {
+                        var content = body.Skip(i + 2).Take(end - 1 - (i + 2)).ToList();
+                        if (content.Count != 0 && !content[0].Is(","))
+                        {
+                            // the space before __VA_OPT__ is the space before the content (but a comma sticks to what is before it)
+                            content[0] = content[0].Clone();
+                            content[0].Pad = token.Pad;
+                        }
+                        result.AddRange(content);
+                    }
+                    else if (0 < result.Count && result[^1].Is("##"))
+                    {
+                        result.RemoveAt(result.Count - 1);
+                    }
+                    else if (end < body.Count && body[end].Is("##"))
+                    {
+                        end++;
+                    }
+                    i = end - 1;
                 }
                 return result;
             }

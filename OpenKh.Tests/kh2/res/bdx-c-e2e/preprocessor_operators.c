@@ -8,12 +8,14 @@
 #define CALL(f, ...) f(__VA_ARGS__)
 #define SHOW(fmt, ...) trap_puti(fmt, ## __VA_ARGS__)
 #define ALL(...) sum4(__VA_ARGS__)
+#define CALLV(f, ...) f(1 __VA_OPT__(, __VA_ARGS__))
 
 struct S { FIELD(a, 1); FIELD(b, 2); };
 int CAT(value, 1) = 10;
 int XCAT(value, COUNT) = 30;
 
 int add(int a, int b) { return a + b; }
+int one(int a) { return a * 10; }
 int sum4(int a, int b, int c, int d) { return a * 1000 + b * 100 + c * 10 + d; }
 
 void main() {
@@ -28,4 +30,5 @@ void main() {
   SHOW("x=", 7);
   trap_puti("all=", ALL(5, 6, 7, 8));
   trap_puti("paste=", CAT(1, 2) + CAT(0x, 10));
+  trap_puti("opt=", CALLV(one) * 100 + CALLV(add, 2));
 }

@@ -211,8 +211,8 @@ namespace OpenKh.Tests.kh2
         public void StructPointerMemberAccess()
         {
             var s = Compile("struct S { int a; int b; }; int f(struct S *p) { return p->b + (*p).a; }");
-            Assert.Contains(" push.d.sp 0 ; p\n push.d.pop 4\n", s);
-            Assert.Contains(" push.d.pop 0\n", s);
+            Assert.Contains(" push.d.sp.d 4\n", s);
+            Assert.Contains(" push.d.sp.d 0\n", s);
         }
 
         [Fact]
@@ -236,8 +236,42 @@ namespace OpenKh.Tests.kh2
                 "struct V { int x; struct V *next; };" +
                 "int sum(struct V *p) { int t = 0; while (p) { t += p->x; p = p->next; } return t; }"
             );
-            Assert.Contains(" push.d.pop 0\n", s);
-            Assert.Contains(" push.d.pop 4\n", s);
+            // p is the first slot: its members are read with `sp.d` (`*(sp[0]) + offset`)
+            Assert.Contains(" push.d.sp.d 0\n", s);
+            Assert.Contains(" push.d.sp.d 4\n", s);
+        }
+
+        [Fact]
+        public void StructPointerThatIsNotTheFirstSlotIsReadThroughTheStack()
+        {
+            var s = Compile("struct V { int x; struct V *next; }; int f(int k, struct V *p) { return p->next->x; }");
+            Assert.Contains(" push.d.sp 4 ; p\n push.d.pop 4\n push.d.pop 0\n", s);
+        }
+
+        [Fact]
+        public void MembersOfThePointerInTheFirstSlotUseSpD()
+        {
+            var s = Compile("struct V { int x; int y; struct V *next; }; void f(struct V *p, int k) { p->y = 3; p->x += k; int a = p->y; p->next = p; }");
+            Assert.Contains(" push 3\n dup\n pop.sp.d 4\n drop\n", s);
+            Assert.Contains(" push.d.sp.d 0\n push.d.sp 4 ; k\n add\n dup\n pop.sp.d 0\n drop\n", s);
+            Assert.Contains(" push.d.sp.d 4\n pop.sp 8 ; a\n", s);
+            Assert.Contains(" push.d.sp 0 ; p\n dup\n pop.sp.d 8\n drop\n", s);
+            Assert.DoesNotContain("memcpy", s);
+        }
+
+        [Fact]
+        public void AddressOfAMemberOfThePointerInTheFirstSlotIsPushSpD()
+        {
+            var s = Compile("struct V { int x; int y; }; int *f(struct V *p) { return &p->y; }");
+            Assert.Contains(" push.sp.d 4\n", s);
+        }
+
+        [Fact]
+        public void ThePointedValueOfThePointerInTheFirstSlotUsesSpD()
+        {
+            var s = Compile("int g(int *q) { *q = 5; return *q; }");
+            Assert.Contains(" push 5\n dup\n pop.sp.d 0\n drop\n", s);
+            Assert.Contains(" push.d.sp.d 0 ; deref\n", s);
         }
 
         [Fact]
@@ -259,10 +293,10 @@ namespace OpenKh.Tests.kh2
         [Fact]
         public void PointerStoreIsMemcpyOfTheValueToThePointer()
         {
-            var s = Compile("struct V { int x; int y; }; void f(struct V *p) { p->y = 3; }");
-            // the value is dup'ed; pointer and value go to hidden slots to be pushed destination first
+            // (p is not in the first slot: the address is evaluated first, then the value, then memcpy)
+            var s = Compile("struct V { int x; int y; }; void f(int k, struct V *p) { p->y = 3; }");
             Assert.Contains(
-                " push.d.sp 0 ; p\n push 4\n add\n push 3\n memcpy 0\n",
+                " push.d.sp 4 ; p\n push 4\n add\n push 3\n memcpy 0\n",
                 s
             );
             Assert.DoesNotContain("@@", s);
@@ -496,24 +530,24 @@ namespace OpenKh.Tests.kh2
         [Fact]
         public void CompoundAssignmentThroughPointerEvaluatesTheAddressOnce()
         {
-            var s = Compile("void f(int *q) { *q += 2; }");
+            var s = Compile("void f(int k, int *q) { *q += 2; }");
             // address, dup, load, operand, op, store: as real data does
-            Assert.Contains(" push.d.sp 0 ; q\n dup\n push.d.pop 0 ; deref\n push 2\n add\n memcpy 0\n", s);
+            Assert.Contains(" push.d.sp 4 ; q\n dup\n push.d.pop 0 ; deref\n push 2\n add\n memcpy 0\n", s);
         }
 
         [Fact]
         public void PostIncrementThroughPointerStatementIsAddressLoadAddStore()
         {
-            var s = Compile("void f(int *q) { (*q)++; }");
-            Assert.Contains(" push.d.sp 0 ; q\n dup\n push.d.pop 0 ; deref\n push 1\n add\n memcpy 0\n", s);
+            var s = Compile("void f(int k, int *q) { (*q)++; }");
+            Assert.Contains(" push.d.sp 4 ; q\n dup\n push.d.pop 0 ; deref\n push 1\n add\n memcpy 0\n", s);
             Assert.DoesNotContain("drop", s);
         }
 
         [Fact]
         public void AssignmentThroughPointerKeepsTheValueWhenItIsUsed()
         {
-            var s = Compile("int f(int *q) { return *q = 3; }");
-            Assert.Contains(" push.d.sp 0 ; q\n push 3\n dup\n pop.sp 4\n memcpy 0\n push.d.sp 4\n", s);
+            var s = Compile("int f(int k, int *q) { return *q = 3; }");
+            Assert.Contains(" push.d.sp 4 ; q\n push 3\n dup\n pop.sp 8\n memcpy 0\n push.d.sp 8\n", s);
         }
 
         [Fact]
@@ -646,7 +680,7 @@ namespace OpenKh.Tests.kh2
         [Fact]
         public void PointerStoreThroughIntPointer()
         {
-            var s = Compile("void f(int *q) { *q = 1; *q += 2; }");
+            var s = Compile("void f(int k, int *q) { *q = 1; *q += 2; }");
             Assert.Contains("memcpy 0", s);
         }
 

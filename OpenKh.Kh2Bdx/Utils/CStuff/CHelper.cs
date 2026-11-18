@@ -336,6 +336,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             return type.Size;
         }
 
+        /// <summary>Is the code just the value of the first slot of the frame (`push.d.sp 0`, the first parameter or local)?</summary>
+        private static bool IsFirstSlotValue(string? code) =>
+            code != null && System.Text.RegularExpressions.Regex.IsMatch(code, @"^\s*push\.d\.sp 0\s*(;[^\r\n]*)?$");
+
         internal VarRef Deref(VarRef lval, SourceRef sourceRef)
         {
             if (lval.Type.IsArray)
@@ -368,6 +372,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 var newType = lval.Type.BaseType ?? throw new CompilerException(sourceRef, $"Pointer type {lval.Type.Display} has no base type");
                 var size = newType.Size;
 
+                // The pointer is the value of sp[0]: the instructions with `sp.d` use it as it is (`*(sp[0]) + imm`), as real data
+                // does for the members of `this`.
+                var viaSp0 = IsFirstSlotValue(lval.Getter);
+
                 if (newType.IsStruct)
                 {
                     // *p of struct pointer: every member occupies a 4-byte slot (see StructVar),
@@ -376,15 +384,18 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         newType,
                         0,
                         "",
-                        getter: (off, _) => JoinLines(lval.Getter, $"push.d.pop {off}"),
-                        setter: (off, _) => PointerStore(lval.Getter, off),
+                        getter: (off, _) => viaSp0 ? $"push.d.sp.d {off}" : JoinLines(lval.Getter, $"push.d.pop {off}"),
+                        setter: (off, _) => viaSp0 ? $"pop.sp.d {off}" : PointerStore(lval.Getter, off),
                         pointer: (off, _) => (off == 0)
                             ? lval.Getter!
-                            : JoinLines(lval.Getter, $"push {off}", "add"),
-                        target: (off, _) => new PointerTarget(
-                            (off == 0) ? lval.Getter! : JoinLines(lval.Getter, $"push {off}", "add"),
-                            "push.d.pop 0"
-                        )
+                            : (viaSp0 ? $"push.sp.d {off}" : JoinLines(lval.Getter, $"push {off}", "add")),
+                        // (a member through sp[0] is written by `pop.sp.d`, with the value first, so it has no target)
+                        target: (off, _) => viaSp0
+                            ? null
+                            : new PointerTarget(
+                                (off == 0) ? lval.Getter! : JoinLines(lval.Getter, $"push {off}", "add"),
+                                "push.d.pop 0"
+                            )
                     );
                 }
 
@@ -410,18 +421,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return new VarRef(
                     Type: newType,
                     Getter: (size <= 4)
-                        ? JoinLines(
-                            lval.Getter,
-                            $"push.d.pop 0 ; deref"
-                        )
+                        ? (viaSp0 ? "push.d.sp.d 0 ; deref" : JoinLines(lval.Getter, $"push.d.pop 0 ; deref"))
                         : null,
                     // pop.sp.d stores a whole word, so only 4-byte pointees are writable
                     // (a store to short would clobber the neighbouring bytes).
                     Setter: (size == 4)
-                        ? PointerStore(lval.Getter, 0)
+                        ? (viaSp0 ? "pop.sp.d 0" : PointerStore(lval.Getter, 0))
                         : null,
                     GetPointer: lval.Getter,
-                    Target: (size == 4)
+                    Target: (size == 4 && !viaSp0)
                         ? new PointerTarget(lval.Getter!, "push.d.pop 0 ; deref")
                         : null
                 );
@@ -441,15 +449,13 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     newType = TypeDesc.FunctionPointer(newType.Function); // *pp of a pointer to a function pointer
                 }
 
+                var viaSp0 = IsFirstSlotValue(lval.Getter);
                 return new VarRef(
                     Type: newType,
-                    Getter: JoinLines(
-                        lval.Getter,
-                        $"push.d.pop 0 ; deref"
-                    ),
-                    Setter: PointerStore(lval.Getter, 0), // pointee is a pointer: 4 bytes
+                    Getter: viaSp0 ? "push.d.sp.d 0 ; deref" : JoinLines(lval.Getter, $"push.d.pop 0 ; deref"),
+                    Setter: viaSp0 ? "pop.sp.d 0" : PointerStore(lval.Getter, 0), // pointee is a pointer: 4 bytes
                     GetPointer: lval.Getter,
-                    Target: new PointerTarget(lval.Getter!, "push.d.pop 0 ; deref")
+                    Target: viaSp0 ? null : new PointerTarget(lval.Getter!, "push.d.pop 0 ; deref")
                 );
             }
         }

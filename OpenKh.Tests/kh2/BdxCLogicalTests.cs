@@ -1075,6 +1075,81 @@ namespace OpenKh.Tests.kh2
             Assert.Contains(" push.sp 0 ; &a\n jal ", s);
         }
 
+        private static string ErrorOf(string code) =>
+            Assert.ThrowsAny<Exception>(() => Compile(code.Replace("\r\n", "\n"))).Message;
+
+        [Fact]
+        public void ErrorsAreReportedAtTheLineOfTheTextWithoutMarkers()
+        {
+            Assert.StartsWith("t.c(3, 2):", ErrorOf("void f() {\n\n  x = 1;\n}"));
+        }
+
+        [Fact]
+        public void LineDirectiveSetsTheLineAndTheFileOfTheNextLine()
+        {
+            var message = ErrorOf("#line 100 \"foo.c\"\nvoid f() {\n  x = 1;\n}");
+            // the line after the directive is 100 (`void f() {`), so `x = 1;` is 101
+            Assert.StartsWith("foo.c(101, 2):", message);
+        }
+
+        [Fact]
+        public void LineDirectiveWithoutAFileKeepsTheFile()
+        {
+            Assert.StartsWith("t.c(51, 2):", ErrorOf("#line 50\nvoid f() {\n  x = 1;\n}"));
+        }
+
+        [Fact]
+        public void GnuLineMarkerWithFlagsIsReadLikeLineDirective()
+        {
+            // the form that `cpp` writes: # line "file" flags
+            Assert.StartsWith("bar.c(11, 2):", ErrorOf("# 10 \"bar.c\" 1 3\nvoid f() {\n  x = 1;\n}"));
+        }
+
+        [Fact]
+        public void TheLastMarkerBeforeALineApplies()
+        {
+            var message = ErrorOf("# 1 \"a.h\"\nint g;\n# 40 \"b.c\"\nvoid f() {\n  x = 1;\n}\n");
+            Assert.StartsWith("b.c(41, 2):", message);
+        }
+
+        [Fact]
+        public void TheFileNameOfAMarkerKeepsEscapedBackslashes()
+        {
+            Assert.StartsWith("C:\\dir\\foo.c(", ErrorOf("# 1 \"C:\\\\dir\\\\foo.c\"\nvoid f() {\n  x = 1;\n}"));
+        }
+
+        [Fact]
+        public void ErrorsInReparsedStatementsAreReportedAtTheirLine()
+        {
+            // `nope(1);` is first read as a declaration and then as an expression
+            var message = ErrorOf("# 20 \"x.c\"\nvoid f() {\n\n  nope(1);\n}");
+            Assert.StartsWith("x.c(22,", message);
+            Assert.StartsWith("t.c(4,", ErrorOf("void f() {\n\n\n  nope(1);\n}"));
+        }
+
+        [Fact]
+        public void OtherDirectivesAreIgnoredAndDoNotMoveTheLines()
+        {
+            var message = ErrorOf("#pragma once\n#define N 10\nvoid f() {\n  x = 1;\n}");
+            Assert.StartsWith("t.c(4, 2):", message);
+        }
+
+        [Fact]
+        public void MarkersInContinuedDirectivesAndCommentsAreNotMarkers()
+        {
+            Assert.StartsWith("t.c(6, 2):", ErrorOf("#define X \\\n# 99 \"no.c\"\n/*\n# 77 \"no2.c\"\n*/\n  x = 1;\n"));
+        }
+
+        [Theory]
+        [InlineData("#line 0\nint g;")]
+        [InlineData("#line abc\nint g;")]
+        [InlineData("#line\nint g;")]
+        [InlineData("#line 10 foo.c\nint g;")]
+        public void InvalidLineDirectiveIsAnError(string code)
+        {
+            Assert.Contains("Invalid #line", ErrorOf(code));
+        }
+
         [Fact]
         public void FunctionNameAsAValueIsItsNumber()
         {

@@ -826,8 +826,18 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             );
             var stream = CharStreams.fromString(text.TrimEnd().TrimEnd(';'));
             ((CodePointCharStream)stream).name = context.Start.InputStream.SourceName;
+
+            // the tokens of the statement keep the line and column they have in the text, for the errors
+            if (LineMap.For(context.Start.InputStream) is { } lineMap)
+            {
+                LineMap.Attach(stream, lineMap);
+            }
+            var lexer = new CPP14Lexer(stream, TextWriter.Null, TextWriter.Null);
+            lexer.Line = context.Start.Line;
+            lexer.Column = context.Start.Column;
+
             var parser = new CPP14Parser(
-                new CommonTokenStream(new CPP14Lexer(stream, TextWriter.Null, TextWriter.Null)),
+                new CommonTokenStream(lexer),
                 TextWriter.Null,
                 TextWriter.Null
             );

@@ -35,6 +35,9 @@ namespace OpenKh.Kh2Bdx.Utils
             //TODO #pragma defsyscall trap_puti 0 0
 
             var stream = FromString(script, scriptName);
+
+            // the line markers a preprocessor leaves (`#line 12 "file.c"`) say where the errors are to be reported
+            LineMap.Attach(stream, LineMap.Parse(script, scriptName));
             var lexer = new CPP14Lexer(
                 input: stream, 
                 output: output ?? TextWriter.Null, 
@@ -122,12 +125,7 @@ namespace OpenKh.Kh2Bdx.Utils
                 throw new Exception(nameof(token));
             }
 
-            var start = token.Start;
-
-            return new SourceRef(
-                SourceName: start.InputStream.SourceName,
-                Line: start.Line,
-                Column: start.Column);
+            return SourceRef.FromToken(token.Start);
         }
 
         private static ICharStream FromString(string script, string sourceName)

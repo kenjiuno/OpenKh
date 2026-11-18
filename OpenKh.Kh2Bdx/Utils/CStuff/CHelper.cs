@@ -251,11 +251,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
         internal SourceRef GetSourceRefFromSymbol(IToken symbol)
         {
-            return new SourceRef(
-                SourceName: symbol.TokenSource.SourceName,
-                Line: symbol.Line,
-                Column: symbol.Column
-            );
+            return SourceRef.FromToken(symbol);
         }
 
         /// <summary>

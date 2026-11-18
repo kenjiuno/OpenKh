@@ -1,5 +1,3 @@
-using OpenKh.Kh2Bdx.Models;
-using OpenKh.Kh2Bdx.Utils;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -7,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using Xunit;
-using YamlDotNet.Serialization;
 
 namespace OpenKh.Tests.kh2
 {
@@ -28,12 +25,7 @@ namespace OpenKh.Tests.kh2
     /// </summary>
     public class BdxCEmuTests
     {
-        private const string ResDir = "kh2/res/bdx-c-e2e";
-
-        public static IEnumerable<object[]> GetPrograms() =>
-            Directory.GetFiles(ResDir, "*.c")
-                .OrderBy(it => it, StringComparer.Ordinal)
-                .Select(it => new object[] { Path.GetFileNameWithoutExtension(it) });
+        public static IEnumerable<object[]> GetPrograms() => BdxCE2e.GetPrograms();
 
         [SkippableTheory]
         [MemberData(nameof(GetPrograms))]
@@ -44,21 +36,8 @@ namespace OpenKh.Tests.kh2
             Skip.If(string.IsNullOrEmpty(bdEmu) || !File.Exists(bdEmu), "BDEMU_EXE is not set to bdEmu.exe");
             Skip.If(string.IsNullOrEmpty(vmBin) || !File.Exists(vmBin), "MOBILEAIEXECBIN is not set to MobileAiExec.bin");
 
-            var cFile = Path.Combine(ResDir, name + ".c");
-            var expected = File.ReadAllText(Path.Combine(ResDir, name + ".expected")).Trim();
-
-            // C -> bdscript (with header) -> bdx, the same as `Bdxio encode-c --header` and `encode`
-            var bdscript = BdxCScript.AddHeader(
-                new BdxCEncoder().EncodeC(File.ReadAllText(cFile), cFile),
-                cFile
-            );
-            var ascii = BdxAsciiModel.ParseText(bdscript);
-            var bdx = new BdxEncoder(
-                header: new DeserializerBuilder().Build().Deserialize<BdxHeader>(ascii.Header ?? ""),
-                script: ascii.GetLineNumberRetainedScriptBody(),
-                scriptName: cFile,
-                loadScript: fileName => File.ReadAllText(fileName)
-            ).Content;
+            var expected = BdxCE2e.Expected(name);
+            var bdx = BdxCE2e.CompileToBdx(name);
 
             var workDir = Path.Combine(Path.GetTempPath(), "OpenKh.Tests.BdxCEmu", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(workDir);

@@ -120,7 +120,60 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 return ReduceClassSpecifier(classSpecifier);
             }
 
+            if (typeSpecifier.enumSpecifier() is { } enumSpecifier)
+            {
+                return ReduceEnumSpecifier(enumSpecifier);
+            }
+
             throw new CompilerException(GetSourceRef(typeSpecifier), "Unsupported type specifier");
+        }
+
+        /// <summary>enumerators (`RED` of `enum Color { RED, GREEN }`) defined so far, with their values</summary>
+        internal Dictionary<string, int> Enumerators { get; } = new();
+
+        private readonly HashSet<string> _enumTags = new();
+
+        private readonly Dictionary<CPP14Parser.EnumSpecifierContext, TypeDesc> _enumCache = new();
+
+        /// <summary>
+        /// `enum Color { RED, GREEN = 5, BLUE }`: the enumerators are int constants (each one more than the one
+        /// before, from 0, unless it has a value), and the type is int.
+        /// </summary>
+        private TypeDesc ReduceEnumSpecifier(CPP14Parser.EnumSpecifierContext enumSpecifier)
+        {
+            if (_enumCache.TryGetValue(enumSpecifier, out var cached))
+            {
+                return cached;
+            }
+
+            var head = enumSpecifier.enumHead();
+            if (head.enumkey().Class() != null || head.enumkey().Struct() != null || head.enumbase() != null)
+            {
+                throw new CompilerException(GetSourceRef(head), "Only plain enum is supported");
+            }
+
+            if (head.Identifier() is { } tag && !_enumTags.Add(tag.GetText()))
+            {
+                throw new CompilerException(GetSourceRef(head), $"enum '{tag.GetText()}' is defined twice");
+            }
+
+            var next = 0;
+            foreach (var definition in enumSpecifier.enumeratorList()?.enumeratorDefinition() ?? Array.Empty<CPP14Parser.EnumeratorDefinitionContext>())
+            {
+                if (definition.constantExpression() is { } valueExpression)
+                {
+                    next = ConstEval.Evaluate(valueExpression, GetSourceRef, this);
+                }
+
+                var name = definition.enumerator().Identifier().GetText();
+                if (!Enumerators.TryAdd(name, next))
+                {
+                    throw new CompilerException(GetSourceRef(definition), $"'{name}' is defined twice");
+                }
+                next += 1;
+            }
+
+            return _enumCache[enumSpecifier] = TypeDesc.Int32;
         }
 
         /// <summary>struct tags defined so far (global scope only)</summary>
@@ -256,6 +309,14 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             if (elaborated.classKey()?.Struct() != null && elaborated.Identifier() is var identifier && identifier != null)
             {
                 return LookupStruct(identifier.GetText(), elaborated);
+            }
+
+            if (elaborated.Enum() != null && elaborated.Identifier() is { } enumTag)
+            {
+                // `enum Color c;`
+                return _enumTags.Contains(enumTag.GetText())
+                    ? TypeDesc.Int32
+                    : throw new CompilerException(GetSourceRef(elaborated), $"Unknown enum '{enumTag.GetText()}'");
             }
 
             throw new CompilerException(GetSourceRef(elaborated), "Unsupported elaborated type specifier");

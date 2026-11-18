@@ -19,7 +19,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             Func<string, VarRef?>? getVar = null)
         {
             var cHelper = new CHelper(
-                GetVar: name => getVar?.Invoke(name) ?? throw new CompilerException(getSourceRef(constantExpression), $"'{name}' is not a constant"),
+                // an unknown name is reported by the visitor (after it has looked for an enumerator of that name)
+                GetVar: name => getVar?.Invoke(name),
                 DeclareVar: (_, sourceRef) => throw new CompilerException(sourceRef, "Not a constant expression"),
                 DeclareStaticVar: (_, sourceRef) => throw new CompilerException(sourceRef, "Not a constant expression"),
                 AllocateStackItems: _ => throw new CompilerException(getSourceRef(constantExpression), "Not a constant expression")

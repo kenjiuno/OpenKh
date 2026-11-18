@@ -1076,6 +1076,54 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void EnumeratorsAreIntConstants()
+        {
+            var s = Compile("enum Color { RED, GREEN = 5, BLUE }; int f() { return RED + GREEN + BLUE; }");
+            Assert.Contains(" push 0\n push 5\n add\n push 6\n add\n", s);
+        }
+
+        [Fact]
+        public void EnumValuesCanUseEarlierEnumeratorsAndNegatives()
+        {
+            var s = Compile("enum L { LOW = 10, MID = 20, HIGH = LOW + MID, NEG = -5, AFTER }; int f() { return HIGH; } int g() { return AFTER; }");
+            Assert.Contains("f: ; func f\n push 30\n", s);
+            Assert.Contains("g: ; func g\n push -4\n", s);
+        }
+
+        [Fact]
+        public void EnumVariablesTypesAndSizeofAreInt()
+        {
+            var s = Compile("enum Color { RED, GREEN }; enum Color g = GREEN; enum Color f(enum Color c) { return c; } int n() { return sizeof(enum Color); }");
+            Assert.Contains("_initc:\n push 1\n pop.wp g\n ret\n", s);
+            Assert.Contains("n: ; func n\n push 4\n", s);
+        }
+
+        [Fact]
+        public void EnumeratorsWorkAsCaseLabelsAndArrayLengths()
+        {
+            Compile("enum E { A, B, C }; int t[C + 1]; int f(int x) { switch (x) { case A: return 1; case C: return 3; } return t[C]; }");
+        }
+
+        [Fact]
+        public void ALocalVariableHidesAnEnumerator()
+        {
+            var s = Compile("enum E { A = 7 }; int f() { int A = 1; return A; }");
+            Assert.Contains(" push.d.sp 0 ; A\n", s);
+        }
+
+        [Theory]
+        [InlineData("enum E { A, A };")]
+        [InlineData("enum E { A }; enum E { B };")]
+        [InlineData("void f() { enum Nope n; }")]
+        [InlineData("enum class E { A };")]
+        [InlineData("int n; enum E { A = n };")]
+        [InlineData("enum E { A }; void f() { A = 1; }")]
+        public void BadEnum(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
         public void SizeofOfAStructGivesAnArrayLength()
         {
             var s = Compile("struct P { int x; int y; }; void f() { int a[sizeof(struct P) / 4]; int n; n = 1; }");

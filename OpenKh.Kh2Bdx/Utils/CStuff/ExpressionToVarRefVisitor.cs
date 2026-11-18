@@ -1668,6 +1668,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             {
                 var varName = identifier.GetText();
                 var var0 = CHelper.GetVar(varName);
+                if (var0 is null && ReduceTypeDesc1.Enumerators.TryGetValue(varName, out var enumerator))
+                {
+                    // an enumerator is an int constant (a variable of the same name hides it, as in C)
+                    return new VarRef(Type: TypeDesc.Int32, Getter: $"push {enumerator}");
+                }
                 if (var0 is null)
                 {
                     throw new CompilerException(GetSourceRef(unqualifiedId), $"Unknown variable '{varName}'");

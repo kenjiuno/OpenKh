@@ -1076,6 +1076,61 @@ namespace OpenKh.Tests.kh2
         }
 
         [Fact]
+        public void FunctionNameAsAValueIsItsNumber()
+        {
+            var s = Compile("int a(int x) { return x; } int b(int x) { return x; } int f() { int (*p)(int) = b; p = a; p = &a; return 0; }");
+            // numbered in the order their address is first taken: b is 1, a is 2
+            Assert.Contains(" push 1 ; &b\n", s);
+            Assert.Contains(" push 2 ; &a\n", s);
+        }
+
+        [Fact]
+        public void CallThroughAFunctionPointerPushesTheNumberLastAndJalsToTheStub()
+        {
+            var s = Compile("int a(int x, int y) { return x; } int f(int (*p)(int, int)) { return p(1, 2); }");
+            Assert.Contains(" push 2\n push 1\n push.d.sp 0 ; p\n jal 4, __icall1 ; signed int(signed int,signed int)\n", s);
+        }
+
+        [Fact]
+        public void StubDispatchesOverTheFunctionsOfTheSameType()
+        {
+            var s = Compile(
+                "int a(int x) { return x; } int b(int x) { return x; } int c(int x, int y) { return x; } int d(int x) { return x; }" +
+                "int f() { int (*p)(int) = a; p = b; int (*q)(int, int) = c; return p(1) + q(1, 2); }"
+            );
+            // p's type: a and b (numbered 1 and 2), not c (3) and not d (never taken)
+            Assert.Contains("__icall1: ; call through a function pointer signed int(signed int)\n pop.sp 0 ; function number\n push.d.sp 0\n push 1\n sub\n bnez __icall1_1\n jal 4, a\n ret\n__icall1_1:\n push.d.sp 0\n push 2\n sub\n bnez __icall1_2\n jal 4, b\n ret\n__icall1_2:\n halt\n", s);
+            Assert.Contains("jal 4, c\n", s);
+            Assert.DoesNotContain("jal 4, d\n", s);
+        }
+
+        [Fact]
+        public void FunctionPointerDeclaratorsOfAllKinds()
+        {
+            Compile(
+                "typedef int (*Fn)(int); struct S { Fn a; int (*b)(int, char *); void (*c)(void); }; Fn table[2]; int (*g)(int);" +
+                "int h(int (*cb)(int), Fn *pp) { return cb(1) + (*pp)(2); } Fn mk(int w) { return table[w]; } int (*arr[2])(int);"
+            );
+        }
+
+        [Fact]
+        public void ADereferencedFunctionPointerIsTheSameFunctionPointer()
+        {
+            Compile("int f(int (*p)(int)) { return (*p)(1) + (**p)(2); }");
+        }
+
+        [Theory]
+        [InlineData("int a(int x) { return x; } int f() { int (*p)(int, int) = a; return 0; }")]
+        [InlineData("int a(int x) { return x; } int f() { char (*p)(int) = a; return 0; }")]
+        [InlineData("int a(int x) { return x; } int f() { int (*p)(int) = a; return p(1, 2); }")]
+        [InlineData("int f() { int n; return n(1); }")]
+        [InlineData("int a(int x) { return x; } int f() { int (*p)(int) = a; return p[0]; }")]
+        public void BadFunctionPointerUse(string code)
+        {
+            Assert.ThrowsAny<Exception>(() => Compile(code));
+        }
+
+        [Fact]
         public void TypedefNameIsTheType()
         {
             var s = Compile("typedef int s32; typedef unsigned short u16; s32 g; s32 f(u16 a) { s32 n; n = a; return n; }");

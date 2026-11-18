@@ -263,27 +263,21 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         var declarator = memberDeclarator.declarator()
                             ?? throw new CompilerException(GetSourceRef(memberDeclarator), "declarator must exist");
 
-                        var pointerDeclarator = declarator.pointerDeclarator()
-                            ?? throw new CompilerException(GetSourceRef(declarator), "Unsupported member declarator");
-                        var noPointerDeclarator = pointerDeclarator.noPointerDeclarator();
-                        var memberType = memberBaseType;
-                        foreach (var _ in pointerDeclarator.pointerOperator())
+                        // pointers, arrays (`int v[3]`, `int m[2][3]`) and function pointers (`int (*cb)(int)`) are
+                        // read like the declarators of variables
+                        var memberPair = new ParameterDeclarationToNameAndTypePairVisitor(Reduce, GetSourceRef, this)
+                            .ReduceDeclarator(declarator, memberBaseType);
+                        var memberType = memberPair.Type;
+                        if (memberType.IsArray && memberType.ArrayLength < 0)
                         {
-                            memberType = memberType.MakePointerType();
+                            throw new CompilerException(GetSourceRef(declarator), "Array member needs a length");
                         }
 
-                        // arrays: `int v[3]`, `int m[2][3]` (the last bracket is the innermost element type)
-                        var arrayDeclarator = noPointerDeclarator;
-                        while (arrayDeclarator?.LeftBracket() != null && arrayDeclarator.noPointerDeclarator() is { } innerDeclarator)
-                        {
-                            var length = arrayDeclarator.constantExpression() is { } constantExpression
-                                ? ConstEval.EvaluateArrayLength(constantExpression, GetSourceRef, this)
-                                : throw new CompilerException(GetSourceRef(declarator), "Array member needs a length");
-                            memberType = ArrayTypes.Make(memberType, length, GetSourceRef(declarator));
-                            arrayDeclarator = innerDeclarator;
-                        }
-
-                        if (arrayDeclarator?.parametersAndQualifiers() != null)
+                        if (declarator.pointerDeclarator() is { } memberPointerDeclarator
+                            && memberPointerDeclarator.pointerOperator().Length == 0
+                            && memberPointerDeclarator.noPointerDeclarator() is { } memberFunction
+                            && memberFunction.parametersAndQualifiers() != null
+                            && memberFunction.noPointerDeclarator()?.declaratorid() != null)
                         {
                             throw new CompilerException(GetSourceRef(declarator), "Function members are not supported");
                         }
@@ -293,7 +287,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                             throw new CompilerException(GetSourceRef(declarator), "Member must not be void or an incomplete type");
                         }
 
-                        var memberName = NameOfDeclarator(declarator);
+                        var memberName = memberPair.Name;
                         if (members.Any(it => it.Name == memberName))
                         {
                             throw new CompilerException(GetSourceRef(declarator), $"Duplicate member '{memberName}'");

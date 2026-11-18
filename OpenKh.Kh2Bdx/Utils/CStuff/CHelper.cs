@@ -16,7 +16,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         Func<string, FuncSig?>? GetFunc = null,
         Func<byte[], string>? AddStringLiteral = null,
         FrameState? Frame = null,
-        Func<Func<string, string>>? NextUniqueLabelGenerator = null
+        Func<Func<string, string>>? NextUniqueLabelGenerator = null,
+        FunctionPointers? FuncPtrs = null
         )
     {
         /// <summary>
@@ -208,7 +209,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
             // Pointers are plain 4-byte values: allow `p = 0`, `int x = (int)p` and void* <-> T*.
             static bool IsIntLike(TypeDesc t) => t.PointerDepth == 0 && !t.IsStruct && t.Math == LLMath.IntVer;
-            static bool IsVoidPtr(TypeDesc t) => t.PointerDepth == 1 && t.BaseType == TypeDesc.Void;
+            static bool IsVoidPtr(TypeDesc t) => t.PointerDepth == 1 && t.BaseType == TypeDesc.Void && t.Function == null;
             if ((ToType.PointerDepth > 0 && IsIntLike(FromType))
                 || (FromType.PointerDepth > 0 && IsIntLike(ToType))
                 || (FromType.PointerDepth > 0 && ToType.PointerDepth > 0 && (IsVoidPtr(FromType) || IsVoidPtr(ToType))))
@@ -263,7 +264,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         internal VarRef Index(VarRef array, VarRef index, SourceRef sourceRef)
         {
             var type = array.Type;
-            if (!type.IsArray && type.PointerDepth == 0)
+            if (!type.IsArray && (type.PointerDepth == 0 || (type.Function != null && type.PointerDepth == 1)))
             {
                 throw new CompilerException(sourceRef, $"Subscripted value is neither an array nor a pointer: {type.Display}");
             }
@@ -350,6 +351,12 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     : Deref(new VarRef(Type: element.MakePointerType(), Getter: lval.Getter, GetPointer: lval.GetPointer), sourceRef);
             }
 
+            if (lval.Type.Function != null && lval.Type.PointerDepth == 1)
+            {
+                // *fp is the function again, as in C: `(*fp)(1)`
+                return lval;
+            }
+
             if (lval.Type.PointerDepth == 0)
             {
                 throw new CompilerException(sourceRef, $"Cannot dereference non-pointer type {lval.Type.Display}");
@@ -433,6 +440,10 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                         (lval.Type.PointerDepth - 1 == 1) ? StructVar.StrideOf(lval.Type.BaseType!) : 4
                     ),
                 };
+                if (newType.Function != null && newType.PointerDepth == 1)
+                {
+                    newType = TypeDesc.FunctionPointer(newType.Function); // *pp of a pointer to a function pointer
+                }
 
                 return new VarRef(
                     Type: newType,

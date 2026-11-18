@@ -116,8 +116,72 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             throw new CompilerException(GetSourceRef(pointerDeclarator), "Unsupported pointer declarator");
         }
 
+        /// <summary>The parameter types of `(int, char *)` or `(int a, int b)`; `(void)` and `()` are none.</summary>
+        private List<TypeDesc> ParamTypesOf(CPP14Parser.ParametersAndQualifiersContext parametersAndQualifiers)
+        {
+            var types = new List<TypeDesc>();
+            foreach (var parameterDeclaration in parametersAndQualifiers.parameterDeclarationClause()?.parameterDeclarationList()?.parameterDeclaration()
+                ?? Array.Empty<CPP14Parser.ParameterDeclarationContext>())
+            {
+                var baseType = ReduceTypeDesc2(
+                    parameterDeclaration.declSpecifierSeq() ?? throw new CompilerException(GetSourceRef(parameterDeclaration), "declSpecifierSeq must exist")
+                ).TypeDesc;
+
+                TypeDesc type;
+                if (parameterDeclaration.declarator() is { } declarator)
+                {
+                    type = ReduceDeclarator(declarator, baseType).Type;
+                }
+                else
+                {
+                    // a parameter without a name: `int`, `char *`
+                    type = baseType;
+                    if (parameterDeclaration.abstractDeclarator() is { } abstractDeclarator)
+                    {
+                        var pointers = abstractDeclarator.pointerAbstractDeclarator();
+                        if (pointers == null || pointers.noPointerAbstractDeclarator() != null || pointers.pointerOperator().Any(it => it.Star() == null))
+                        {
+                            throw new CompilerException(GetSourceRef(abstractDeclarator), "Unsupported parameter type");
+                        }
+                        foreach (var _ in pointers.pointerOperator())
+                        {
+                            type = type.MakePointerType();
+                        }
+                    }
+                }
+
+                types.Add(type.IsArray ? type.Decay() : type);
+            }
+
+            if (types.Count == 1 && types[0] == TypeDesc.Void)
+            {
+                types.Clear();
+            }
+            return types;
+        }
+
         private ArgPair ReduceNoPointerDeclarator(CPP14Parser.NoPointerDeclaratorContext noPointerDeclarator, TypeDesc baseType)
         {
+            if (noPointerDeclarator.parametersAndQualifiers() is { } parametersAndQualifiers
+                && noPointerDeclarator.noPointerDeclarator() is { } innerDeclarator
+                && innerDeclarator.pointerDeclarator() is { } innerPointerDeclarator)
+            {
+                // a function pointer: `int (*fp)(int, int)`, `int (*table[3])(int)`. The declarator in the
+                // parentheses has the star, and the type to the left is what the function returns.
+                var pointerOperators = innerPointerDeclarator.pointerOperator();
+                if (pointerOperators.Length == 0 || Types == null)
+                {
+                    throw new CompilerException(GetSourceRef(noPointerDeclarator), "Unsupported declarator");
+                }
+
+                var functionPointer = TypeDesc.FunctionPointer(new FuncType(baseType, ParamTypesOf(parametersAndQualifiers)));
+                for (int x = 1; x < pointerOperators.Length; x++)
+                {
+                    functionPointer = functionPointer.MakePointerType();
+                }
+                return ReduceNoPointerDeclarator(innerPointerDeclarator.noPointerDeclarator(), functionPointer);
+            }
+
             if (noPointerDeclarator.declaratorid() is var declaratorid
                 && declaratorid != null)
             {

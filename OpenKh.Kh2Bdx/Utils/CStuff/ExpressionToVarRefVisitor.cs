@@ -1159,7 +1159,11 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
 
                 if (unaryOperator.And() != null)
                 {
-                    // &x needs the address only (a struct has no value getter)
+                    // `&f` of a function is its number, like `f`; &x needs the address only (a struct has no value getter)
+                    if (lval.Type.Function != null && lval.Type.PointerDepth == 1 && lval.GetPointer == null)
+                    {
+                        return lval;
+                    }
                     return CHelper.MakePointer(lval, GetSourceRef(unaryOperator));
                 }
 
@@ -1419,11 +1423,28 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// </summary>
         private VarRef VisitCall(PostfixExpressionContext postfixExpression, PostfixExpressionContext callee)
         {
-            var funcName = callee.primaryExpression()?.idExpression()?.unqualifiedId()?.Identifier()?.GetText()
-                ?? throw new CompilerException(GetSourceRef(callee), "Only direct function calls by name are supported");
+            var directName = callee.primaryExpression()?.idExpression()?.unqualifiedId()?.Identifier()?.GetText();
 
-            var sig = CHelper.GetFunc?.Invoke(funcName)
-                ?? throw new CompilerException(GetSourceRef(callee), $"Unknown function '{funcName}'");
+            string funcName;
+            FuncSig sig;
+            VarRef? functionPointer = null;
+            if (directName != null && CHelper.GetVar(directName) == null)
+            {
+                funcName = directName;
+                sig = CHelper.GetFunc?.Invoke(funcName)
+                    ?? throw new CompilerException(GetSourceRef(callee), $"Unknown function '{funcName}'");
+            }
+            else
+            {
+                // a call through a function pointer: `fp(1)`, `(*fp)(1)`, `s.cb(1)`, `table[i](1)`
+                functionPointer = VisitPostfixExpression(callee);
+                if (functionPointer.Type.Function is not { } functionType || functionPointer.Type.PointerDepth != 1 || functionPointer.Getter == null)
+                {
+                    throw new CompilerException(GetSourceRef(callee), "Only functions and function pointers can be called");
+                }
+                funcName = "(*fp)";
+                sig = new FuncSig(funcName, functionType.Ret, functionType.Params.ToArray(), functionType.Params.Count);
+            }
 
             var args = postfixExpression.expressionList()?.initializerList()?.initializerClause()
                 ?? Array.Empty<InitializerClauseContext>();
@@ -1489,6 +1510,15 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             if (sig.Syscall is var (table, index))
             {
                 lines.Add($"syscall {table}, {index} ; {funcName}");
+            }
+            else if (functionPointer != null)
+            {
+                // the number of the function is pushed last, so that the stub pops it and the callee gets the arguments
+                var functionKey = functionPointer.Type.Function!.Key;
+                var stub = (CHelper.FuncPtrs ?? throw new CompilerException(GetSourceRef(callee), "Function pointers are not available here"))
+                    .StubFor(functionKey);
+                lines.Add(functionPointer.Getter);
+                lines.Add($"jal {CHelper.NextJalFrameSize()}, {stub} ; {functionKey}");
             }
             else
             {
@@ -1678,6 +1708,17 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 {
                     // an enumerator is an int constant (a variable of the same name hides it, as in C)
                     return new VarRef(Type: TypeDesc.Int32, Getter: $"push {enumerator}");
+                }
+                if (var0 is null
+                    && CHelper.FuncPtrs != null
+                    && CHelper.GetFunc?.Invoke(varName) is { Syscall: null, ParamTypes: not null } function)
+                {
+                    // a function name as a value is the number of the function (see FunctionPointers)
+                    var functionType = new FuncType(function.RetType, function.ParamTypes);
+                    return new VarRef(
+                        Type: TypeDesc.FunctionPointer(functionType),
+                        Getter: $"push {CHelper.FuncPtrs.IndexOf(function.Name, functionType.Key)} ; &{varName}"
+                    );
                 }
                 if (var0 is null)
                 {

@@ -80,7 +80,9 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 }
             }
 
+            var functionPointers = new FunctionPointers();
             var cHelper = new CHelper(
+                FuncPtrs: functionPointers,
                 GetFunc: name => funcDict.TryGetValue(name, out var sig) ? sig : null,
                 AddStringLiteral: bytes =>
                 {
@@ -193,6 +195,9 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                     throw new CompilerException(GetSourceRef(declaration), "Unsupported declaration type");
                 }
             }
+
+            // the stubs of calls through function pointers: after every function that can be called is known
+            functionPointers.WriteStubs(codeSeg);
 
             return new Result(
                 CodeSeg: codeSeg,
@@ -515,7 +520,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
                 GetFunc: parent.GetFunc,
                 AddStringLiteral: parent.AddStringLiteral,
                 Frame: parent.Frame,
-                NextUniqueLabelGenerator: parent.NextUniqueLabelGenerator
+                NextUniqueLabelGenerator: parent.NextUniqueLabelGenerator,
+                FuncPtrs: parent.FuncPtrs
             );
         }
 

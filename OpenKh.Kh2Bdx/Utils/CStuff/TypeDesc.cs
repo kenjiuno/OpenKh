@@ -22,7 +22,8 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         bool IsStruct = false,
         IReadOnlyList<StructMember>? Members = null,
         int ArrayLength = 0,
-        TypeDesc? ElementType = null
+        TypeDesc? ElementType = null,
+        FuncType? Function = null
         )
     {
         public bool IsArray => ElementType != null;
@@ -42,7 +43,7 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
         /// <summary>An array of char or short: its elements are packed in the slots.</summary>
         public bool IsPackedArray => ElementType is { IsPacked: true };
 
-        public string Display => IsArray
+        public string Display => Function != null && PointerDepth == 1 ? Function.Display : IsArray
             ? $"{ElementType!.Display}[{(0 <= ArrayLength ? ArrayLength.ToString() : "")}]"
             : $"{BaseName}{new string('*', PointerDepth)}";
 
@@ -99,6 +100,17 @@ namespace OpenKh.Kh2Bdx.Utils.CStuff
             Comparators: LLComparators.FloatVer,
             Math: LLMath.FloatVer
             );
+
+        /// <summary>A pointer to a function. Its value is the number of the function, see <see cref="FunctionPointers"/>.</summary>
+        public static TypeDesc FunctionPointer(FuncType function) => new TypeDesc(
+            BaseName: function.Display,
+            Size: 4,
+            Comparators: LLComparators.IntVer,
+            Math: LLMath.IntVer,
+            PointerDepth: 1,
+            BaseType: Void,
+            Function: function
+        );
 
         public TypeDesc MakePointerType()
         {
